@@ -17,34 +17,14 @@
 #include "core_server.h"
 #include "log.h"
 #include "networking.h"
-#include "packets.h"
-#include "packet_defines.h"
+#include "packets_defines.h"
 #include "server.h"
+#include "server_common.h"
 #include "util.h"
 
 
-/* Represent the status of a given socket. */
-typedef enum socket_status_e {
-    /* Socket is closed. */
-    SOCKET_CLOSED   = 0,
-    /* Server accepted connection but is still waiting to perform it's handshake. */
-    SOCKET_WAIT     = 1,
-    /* Server accepted the connection and is ready. */
-    SOCKET_READY    = 2
-} socket_status_t;
-
-
-/* Associate a status with a given socket. */
-typedef struct socket_s {
-    /* The socket. */
-    int socket;
-    /* Status of the socket. */
-    socket_status_t status;
-} socket_t;
-
-
 /* The structure to represent the server. */
-typedef struct client_s {
+typedef struct server_s {
     /* Socket to wait for new connexions. */
     int listening_socket;
     /* Array of sockets representing the neighbours. */
@@ -105,45 +85,9 @@ static void send_conect_reply(const server_t* server, int socket);
 
 
 /*
- * Send a request for the neighbours of ip:host. The answer is
- */
-static void get_neighbours(const char* ip, const char* host);
-
-
-/*
- * Send the join request to ip:host. If ip:host can accept the join, we return
- * the socket used to communicate. Otherwise, we return -1.
- */
-static void send_join_request(const char* ip, const char* host);
-
-
-/*
- * Answer to a join request through the socket.
- */
-static void answer_join_request(int socket);
-
-
-/*
  * Perform the server main loop.
  */
 static int loop(server_t* server);
-
-/*
- * Time interval to check if we have an incoming request on the listening
- * socket. This is in milliseconds.
- */
-#define ACCEPT_TIMEOUT 100
-
-
-/*
- * Extract the IP adress from addr if it's family is AF_INET or AF_INET6. The
- * result of this function is the same as if inet_ntop was called with the
- * correct arguments to extract the IP from addr casted to the appropriate
- * structure.
- *
- * This means that you must free the pointer returned by the function.
- */
-static const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port);
 
 
 /*
@@ -184,6 +128,30 @@ static void handle_accept_result(server_t* server, int result,
                                  const struct sockaddr* addr, socklen_t addr_len);
 
 
+/*******************************************************************************
+ * Packets handling.
+ */
+
+
+/*
+ * Send a request for the neighbours of ip:host.
+ */
+static void get_neighbours(const char* ip, const char* host);
+
+
+/*
+ * Send the join request to ip:host. If ip:host can accept the join, we return
+ * the socket used to communicate. Otherwise, we return -1.
+ */
+static void send_join_request(const char* ip, const char* host);
+
+
+/*
+ * Answer to a join request through the socket.
+ */
+static void answer_join_request(int socket);
+
+
 /******************************************************************************/
 
 
@@ -198,10 +166,15 @@ int run_server() {
     server.handshake        = 0;
     // server.contact_point    = (CORE == 1);
 
+    char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
     int listening_socket = create_listening_socket(SERVER_LISTEN_PORT,
-                                                   MAX_PENDING_REQUESTS);
+                                                   MAX_PENDING_REQUESTS,
+                                                   host_name, port_number);
     if (listening_socket < 0) {
         return listening_socket;
+    } else {
+        applog(LOG_LEVEL_INFO, "[Serveur] Listening on %s:%s.\n",
+                               host_name, port_number);
     }
 
     server.listening_socket = listening_socket;
@@ -217,7 +190,7 @@ int run_server() {
 int loop(server_t* server) {
     while (1) {
         struct sockaddr client_addr;
-        socklen_t client_addr_len;
+        socklen_t client_addr_len = sizeof(client_addr);
         int res = attempt_accept(server->listening_socket, ACCEPT_TIMEOUT,
                                  &client_addr, &client_addr_len);
 
@@ -230,31 +203,6 @@ int loop(server_t* server) {
 }
 
 
-const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port) {
-    char* ip                = NULL;
-    void* target            = NULL;
-    socklen_t target_size   = 0;
-
-    if (addr->ss_family == AF_INET) {
-        ip = malloc(INET_ADDRSTRLEN);
-        target = &((struct sockaddr_in*)addr)->sin_addr;
-        target_size = INET_ADDRSTRLEN;
-        *port = ((const struct sockaddr_in*)addr)->sin_port;
-    } else if (addr->ss_family == AF_INET6) {
-        ip = malloc(INET6_ADDRSTRLEN);
-        target = &((struct sockaddr_in6*)addr)->sin6_addr;
-        target_size = INET6_ADDRSTRLEN;
-        *port = ((const struct sockaddr_in6*)addr)->sin6_port;
-    } else {
-        applog(LOG_LEVEL_WARNING, "[Serveur] Unknown ss_family : %d.\n",
-               addr->ss_family);
-    }
-
-    return inet_ntop(addr->ss_family, target, ip,
-                     target_size);
-}
-
-
 int handshake(server_t* server, int client_socket) {
     if (server->handshake == 1) {
         return HANDSHAKE_ALREADY_SHAKED;
@@ -262,15 +210,15 @@ int handshake(server_t* server, int client_socket) {
 
     server->client_socket = client_socket;
 
-    pkt_id_t client_data;
-    read_from_fd(server->client_socket, &client_data, PKT_ID_LENGTH);
+    opcode_t client_data;
+    read_from_fd(server->client_socket, &client_data, PKT_ID_SIZE);
 
     if (client_data != CMSG_INT_HANDSHAKE) {
         return HANDSHAKE_BAD_OPCODE;
     }
 
-    pkt_id_t data = SMSG_INT_HANDSHAKE;
-    write_to_fd(server->client_socket, &data, PKT_ID_LENGTH);
+    opcode_t data = SMSG_INT_HANDSHAKE;
+    write_to_fd(server->client_socket, &data, PKT_ID_SIZE);
 
     server->handshake = 1;
 
@@ -301,19 +249,20 @@ void answer_join_request(int socket) {
 
 void handle_accept_result(server_t *server, int result,
                           const struct sockaddr* addr, socklen_t addr_len) {
-    if (result == -2) {
+    if (result == ACCEPT_ERR_TIMEOUT) {
+        // applog(LOG_LEVEL_WARNING, "[Serveur] Accept timed out.\n");
         return;
     }
 
     if (result == -1) {
-        applog(LOG_LEVEL_ERROR, "Erreur durant l'acceptation : %s.",
+        applog(LOG_LEVEL_ERROR, "Erreur durant l'acceptation : %s.\n",
                strerror(errno));
         return;
     }
 
     int socket = result;
     in_port_t port;
-    const char* ip = extract_ip((const struct sockaddr_storage*)addr, &port);
+    const char* ip = extract_ip_classic(addr, &port);
     if (ip == NULL) {
         applog(LOG_LEVEL_WARNING, "[Serveur] inet_ntop failed. Erreur : %s.\n",
                strerror(errno));
@@ -344,7 +293,7 @@ void handle_accept_result(server_t *server, int result,
 void handle_handshake_result(server_t* server, int result) {
     switch (result) {
     case HANDSHAKE_OK:
-        applog(LOG_LEVEL_INFO, "[Serveur] Client OK.\n");
+        applog(LOG_LEVEL_INFO, "[Serveur] Client OK (Handshake).\n");
         break;
 
     case HANDSHAKE_BAD_OPCODE:
@@ -363,7 +312,7 @@ void handle_handshake_result(server_t* server, int result) {
 
 
 void send_conect_reply(const server_t* server, int socket) {
-    pkt_id_t id = SMSG_CONNECT_REPLY;
+    opcode_t id = SMSG_CONNECT_REPLY;
     connect_reply_t reply;
     if (server->handshake == 1) {
         reply = REPLY_READY;
@@ -371,7 +320,7 @@ void send_conect_reply(const server_t* server, int socket) {
         reply = REPLY_NOT_READY;
     }
 
-    write_to_fd(socket, &id, PKT_ID_LENGTH);
+    write_to_fd(socket, &id, PKT_ID_SIZE);
     write_to_fd(socket, &reply, 1);
 }
 

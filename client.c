@@ -18,7 +18,7 @@
 #include "common.h"
 #include "log.h"
 #include "networking.h"
-#include "packets.h"
+#include "packets_defines.h"
 #include "server.h"
 #include "util.h"
 
@@ -69,11 +69,11 @@ int run_client() {
 
 
 int handshake(const client_t* client) {
-    pkt_id_t data = CMSG_INT_HANDSHAKE;
-    write_to_fd(client->server_socket, &data, PKT_ID_LENGTH);
+    opcode_t data = CMSG_INT_HANDSHAKE;
+    write_to_fd(client->server_socket, &data, PKT_ID_SIZE);
 
-    pkt_id_t server_data = 0;
-    read_from_fd(client->server_socket, &server_data, PKT_ID_LENGTH);
+    opcode_t server_data = 0;
+    read_from_fd(client->server_socket, &server_data, PKT_ID_SIZE);
 
     if (server_data != SMSG_INT_HANDSHAKE) {
         return -1;

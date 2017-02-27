@@ -1,13 +1,13 @@
-#ifndef PACKETS_H
-#define PACKETS_H
+#ifndef PACKET_DEFINES_H
+#define PACKET_DEFINES_H
 
 #include <stdint.h>
 
 
 /* Type used to represent a packet number. */
-typedef uint8_t pkt_id_t;
+typedef uint8_t opcode_t;
 /* Length of a packet number (bytes) in the header. */
-#define PKT_ID_LENGTH sizeof(pkt_id_t)
+#define PKT_ID_SIZE sizeof(opcode_t)
 
 
 /* Mask for a client message. */
@@ -47,4 +47,32 @@ typedef uint8_t pkt_id_t;
 /* Server contact client to notify it's ready. */
 #define SMSG_INT_HANDSHAKE SMSGI(0)
 
-#endif /* PACKETS_H */
+
+/* Size of the IP protocol version identifier in bytes. */
+typedef uint8_t ip_version_id_t;
+#define IP_VERSION_ID_SIZE sizeof(ip_version_id_t)
+
+
+typedef enum smsg_neighbours_reply_e {
+    /* Node has too many neighbours and cannot afford to take more. */
+    NEIGHBOURS_SATURATED    = 0,
+    /* Node still has the possibility to accept new neighbours. */
+    NEIGHBOURS_OK           = 1
+} smsg_neighbours_reply_t;
+
+
+typedef enum smsg_join_reply_e {
+    JOIN_NO     = 0,
+    JOIN_YES    = 1,
+} smsg_join_reply_t;
+
+
+/* Possible answers the server might send when someone connects. */
+typedef enum connect_reply_e {
+    /* Server has not performed handshake yet. */
+    REPLY_NOT_READY = 0,
+    /* Server is ready. */
+    REPLY_READY     = 1,
+} connect_reply_t;
+
+#endif /* PACKET_DEFINES_H */

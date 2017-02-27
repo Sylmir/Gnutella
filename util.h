@@ -29,4 +29,8 @@ ERROR_CODES_USUAL int write_to_fd(int fd, void* buffer, size_t size);
  */
 ERROR_CODES_USUAL int read_from_fd(int fd, void* buffer, size_t size);
 
+
+/* Compare two ints. */
+int compare_ints(void* lhs, void* rhs);
+
 #endif /* UTIL_H */

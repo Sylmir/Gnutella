@@ -4,12 +4,12 @@ ALL_SOURCES = $(wildcard *.c)
 ALL_OBJECTS = $(ALL_SOURCES:%.c=%.o)
 
 # Main application 
-EXEC_SOURCES = $(filter-out $(wildcard main-*.c), $(ALL_SOURCES))
+EXEC_SOURCES = $(filter-out main-test.c core_server.c, $(ALL_SOURCES))
 EXEC_OBJECTS = $(EXEC_SOURCES:%.c=%.o)
 EXEC = $(shell grep "\#define EXEC_NAME" common.h | cut -d " " -f3 | sed 's/"//g')
 
 # Test application
-TEST_SOURCES = $(filter-out main.c main-core_server.c, $(ALL_SOURCES))
+TEST_SOURCES = $(filter-out main.c core_server.c, $(ALL_SOURCES))
 TEST_OBJECTS = $(TEST_SOURCES:%.c=%.o)
 TESTS = tests
 

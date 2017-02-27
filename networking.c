@@ -100,10 +100,10 @@ int attempt_connect_to(const char* ip, const char* port,
 }
 
 
-int create_listening_socket(const char* port, int max_requests) {
+int create_listening_socket(const char* port, int max_requests,
+                            char* host_name, char* port_number) {
     struct addrinfo hints;
     struct addrinfo *result;
-    char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family     = AF_UNSPEC;
@@ -171,7 +171,7 @@ int create_listening_socket(const char* port, int max_requests) {
 }
 
 int attempt_accept(int listening_socket, int timeout,
-                   struct sockaddr* addr, __socklen_t* addr_len) {
+                   struct sockaddr* addr, socklen_t* addr_len) {
     struct pollfd poller;
     poller.fd = listening_socket;
     poller.events = POLLIN;
@@ -179,8 +179,12 @@ int attempt_accept(int listening_socket, int timeout,
 
     int res = poll(&poller, 1, timeout);
     if (res == 1 && (poller.revents & POLLIN) != 0) {
-        return accept(listening_socket, addr, addr_len);
+        int accept_res = accept(listening_socket, addr, addr_len);
+        if (accept_res == -1 && errno == EINVAL) {
+            printf("addr_len = %d\n", *addr_len);
+        }
+        return accept_res;
     }
 
-    return -1;
+    return ACCEPT_ERR_TIMEOUT;
 }

@@ -17,6 +17,14 @@
  */
 #define ERROR_CODES_USUAL
 
+
+/*
+ * Dummy macro to indicate that the function will return 0 on failure, 1 on
+ * success.
+ */
+#define ERROR_CODES_BOOL
+
+
 /* Any error linked to I/O or libc. */
 #define EXIT_LIBC_ERROR                 1
 /* Not enough arguments supplied to main. */

@@ -5,6 +5,8 @@ struct sockaddr;
 
 #include <sys/types.h>
 
+typedef __socklen_t socklen_t;
+
 #include "common.h"
 
 /*
@@ -47,7 +49,8 @@ ERROR_CODES_USUAL int attempt_connect_to(const char* ip,
  * max_requests requests. On success, the function will return the socket,
  * on failure it will return one of the CL_-family error code (< 0).
  */
-int create_listening_socket(const char* port, int max_requests);
+int create_listening_socket(const char* port, int max_requests,
+                            char* host_name, char* port_number);
 
 /* getaddrinfo failed. */
 #define CL_ERROR_NO_ADDRINFO    -1
@@ -66,9 +69,12 @@ int create_listening_socket(const char* port, int max_requests);
  *
  * If there was something to read, the function subsequently calls accept()
  * and return it's result, storing the informations inside addr and addr_len.
- * If there was nothing to read, the function return -2.
+ * If there was nothing to read, the function return ACCEPT_ERR_TIMEOUT.
  */
 int attempt_accept(int listening_socket, int timeout,
-                   struct sockaddr* addr, __socklen_t* addr_len);
+                   struct sockaddr* addr, socklen_t* addr_len);
+
+/* Timeout reached. */
+#define ACCEPT_ERR_TIMEOUT -2
 
 #endif /* NETWORKING_H */
