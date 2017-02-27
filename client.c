@@ -17,7 +17,9 @@
 #include "client.h"
 #include "common.h"
 #include "log.h"
+#include "networking.h"
 #include "packets.h"
+#include "server.h"
 #include "util.h"
 
 
@@ -45,7 +47,7 @@ ERROR_CODES_USUAL static int handshake(const client_t* client);
 int run_client() {
     client_t client;
 
-    int res = attempt_connect_to("127.0.0.1", CONTACT_PORT,
+    int res = attempt_connect_to("127.0.0.1", SERVER_LISTEN_PORT,
                                  &(client.server_socket), MAX_SERVER_UP_CHECK,
                                  SERVER_UP_CHECK_TIMEOUT);
     if (res == -1) {

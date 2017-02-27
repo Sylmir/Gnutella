@@ -14,8 +14,11 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "core_server.h"
 #include "log.h"
+#include "networking.h"
 #include "packets.h"
+#include "packet_defines.h"
 #include "server.h"
 #include "util.h"
 
@@ -50,15 +53,11 @@ typedef struct client_s {
     int client_socket;
     /* Indicate if we performed the handshake. */
     int handshake;
-    /* Indicate if we are the contact point. */
-    /** @todo Sérieux y'a pas moyen de faire autrement qu'avec un define ? */
-    int contact_point;
 } server_t;
 
 
-
-/* Max number of pending requests on the listening socket. */
-#define LISTEN_MAX_REQUESTS     10
+/* Maximum number of pending requests on the listening socket. */
+#define MAX_PENDING_REQUESTS 50
 
 
 /*
@@ -83,6 +82,8 @@ static int handshake(server_t *server, int client_socket);
 #define HANDSHAKE_MAX               -4
 
 
+static void handle_handshake_result(server_t* server, int result);
+
 /*
  * Join the P2P network. This is done by first requesting a list of neighbours
  * from the contact point. Then, for each possible neighbour we will ask if we
@@ -98,22 +99,28 @@ static int join_network(server_t* server);
 
 
 /*
+ * Send the connection reply.
+ */
+static void send_conect_reply(const server_t* server, int socket);
+
+
+/*
  * Send a request for the neighbours of ip:host. The answer is
  */
-static int get_neighbours(const char* ip, const char* host);
+static void get_neighbours(const char* ip, const char* host);
 
 
 /*
  * Send the join request to ip:host. If ip:host can accept the join, we return
  * the socket used to communicate. Otherwise, we return -1.
  */
-static int send_join_request(const char* ip, const char* host);
+static void send_join_request(const char* ip, const char* host);
 
 
 /*
  * Answer to a join request through the socket.
  */
-static int answer_join_request(int socket);
+static void answer_join_request(int socket);
 
 
 /*
@@ -126,35 +133,6 @@ static int loop(server_t* server);
  * socket. This is in milliseconds.
  */
 #define ACCEPT_TIMEOUT 100
-
-
-/*
- * Call accept() on the listening socket of the server. If the request comes
- * from localhost, the server performs the handshake (if it has not already
- * been done) with the local client. If the request comes from somewhere else,
- * the server responds with SMSG_CONNECT_REPLY, followed by a boolean indicating
- * if it is ready or not (depending on whether or not the handshake has already
- * been performed.
- *
- * If the return value is < -1, it means there was an error. If the return value
- * is -1, it means the handshake was successful. Otherwise, the function will
- * return the newly created socket.
- */
-static int accept_connection(server_t* server);
-
-/* accept() failed. */
-#define ACCEPT_FAILURE (HANDSHAKE_MAX)
-/* The adress returned by accept() is neither AF_INET nor AF_INET6. */
-#define ACCEPT_BAD_FAMILY (ACCEPT_FAILURE - 1)
-
-
-/* Possible answers the server might send when someone connects. */
-typedef enum connect_reply_e {
-    /* Server has not performed handshake yet. */
-    REPLY_NOT_READY = 0,
-    /* Server is ready. */
-    REPLY_READY     = 1,
-} connect_reply_t;
 
 
 /*
@@ -193,8 +171,7 @@ static int handle_new_socket(server_t* server, int new_socket);
 
 
 /*
- * After we accept a new socket, look at the result returned by accept_connection()
- * and perform some actions.
+ * After we accept a new socket, look at the result returned by attempt_accept.
  *
  * If the local client connected and handshaked gracefully or if a remote client
  * connected gracefully, the function does nothing. If the local client handshaked
@@ -203,7 +180,8 @@ static int handle_new_socket(server_t* server, int new_socket);
  * exit. Finally, if accept() failed earlier, the function displays the content
  * of errno. In all other cases, the function does nothing.
  */
-static void handle_accept_result(server_t* server, int result);
+static void handle_accept_result(server_t* server, int result,
+                                 const struct sockaddr* addr, socklen_t addr_len);
 
 
 /******************************************************************************/
@@ -218,106 +196,37 @@ int run_server() {
         server.neighbours[i].status = SOCKET_CLOSED;
     }
     server.handshake        = 0;
-    server.contact_point    = (CORE == 1);
+    // server.contact_point    = (CORE == 1);
 
-    int listening_socket = create_listening_socket(CONTACT_PORT, 10);
+    int listening_socket = create_listening_socket(SERVER_LISTEN_PORT,
+                                                   MAX_PENDING_REQUESTS);
     if (listening_socket < 0) {
         return listening_socket;
     }
 
     server.listening_socket = listening_socket;
+    join_network(&server);
 
     loop(&server);
 
-    close(server.listening_socket);
-    close(server.client_socket);
+    clear_server(&server);
     return EXIT_SUCCESS;
 }
 
 
 int loop(server_t* server) {
     while (1) {
-        struct pollfd listening_poll;
-        listening_poll.fd       = server->listening_socket;
-        listening_poll.events   = POLLIN;
-        listening_poll.revents  = 0;
+        struct sockaddr client_addr;
+        socklen_t client_addr_len;
+        int res = attempt_accept(server->listening_socket, ACCEPT_TIMEOUT,
+                                 &client_addr, &client_addr_len);
 
-        int res = poll(&listening_poll, 1, ACCEPT_TIMEOUT);
-        int accept_res = 0;
-        switch (res) {
-        case -1:
-            applog(LOG_LEVEL_WARNING, "[Serveur] Erreur lors du poll sur la "
-                                      "socket d'écoute. Erreur : %s.\n",
-                                      strerror(errno));
-            continue;
-
-        case 0:
-            break;
-
-        default:
-            accept_res = accept_connection(server);
-            handle_accept_result(server, accept_res);
-            break;
-        }
-
-        if (accept_res >= 0) {
-            handle_new_socket(server, accept_res);
-        }
+        handle_accept_result(server, res, &client_addr, client_addr_len);
 
         handle_sockets(server);
     }
 
     return 0;
-}
-
-
-int accept_connection(server_t* server) {
-    struct sockaddr_storage client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-
-    int attempted_socket = accept(server->listening_socket,
-                                  (struct sockaddr*)&client_addr,
-                                  &client_addr_len);
-    if (attempted_socket == -1) {
-        return ACCEPT_FAILURE;
-    }
-
-    in_port_t port = 0;
-    const char* inet_res = extract_ip(&client_addr, &port);
-
-    if (inet_res == NULL) {
-        applog(LOG_LEVEL_WARNING, "[Serveur] inet_ntop failed. Erreur : %s.\n",
-               strerror(errno));
-
-        if (errno == EAFNOSUPPORT) {
-            close(attempted_socket);
-            return ACCEPT_BAD_FAMILY;
-        }
-    } else {
-        applog(LOG_LEVEL_INFO, "[Serveur] Connexion acceptée depuis %s:%d.\n",
-               inet_res, port);
-
-        if (strcmp(inet_res, "127.0.0.1") == 0 ||
-            strcmp(inet_res, "0000:0000:0000:0000:0000:0000:0000:0001") == 0) {
-            return handshake(server, attempted_socket);
-        }
-
-        free((void*)inet_res);
-    }
-
-
-    pkt_id_t id = SMSG_CONNECT_REPLY;
-    connect_reply_t reply;
-    if (server->handshake == 1) {
-        reply = REPLY_READY;
-    } else {
-        reply = REPLY_NOT_READY;
-    }
-
-    write_to_fd(attempted_socket, &id, PKT_ID_LENGTH);
-    write_to_fd(attempted_socket, &reply, 1);
-
-    return attempted_socket;
 }
 
 
@@ -375,47 +284,95 @@ int join_network(server_t* server) {
 }
 
 
-int get_neighbours(const char* ip, const char* host) {
+void get_neighbours(const char* ip, const char* host) {
 
 }
 
 
-int send_join_request(const char* ip, const char* host) {
+void send_join_request(const char* ip, const char* host) {
 
 }
 
 
-int answer_join_request(int socket) {
+void answer_join_request(int socket) {
 
 }
 
 
-void handle_accept_result(server_t *server, int result) {
+void handle_accept_result(server_t *server, int result,
+                          const struct sockaddr* addr, socklen_t addr_len) {
+    if (result == -2) {
+        return;
+    }
+
+    if (result == -1) {
+        applog(LOG_LEVEL_ERROR, "Erreur durant l'acceptation : %s.",
+               strerror(errno));
+        return;
+    }
+
+    int socket = result;
+    in_port_t port;
+    const char* ip = extract_ip((const struct sockaddr_storage*)addr, &port);
+    if (ip == NULL) {
+        applog(LOG_LEVEL_WARNING, "[Serveur] inet_ntop failed. Erreur : %s.\n",
+               strerror(errno));
+
+        if (errno == EAFNOSUPPORT) {
+            close(socket);
+            return;
+        }
+    } else {
+        /* Check if we can handshake. */
+        applog(LOG_LEVEL_INFO, "[Serveur] Connexion acceptée depuis %s:%d.\n",
+               ip, port);
+
+        if (strcmp(ip, "127.0.0.1") == 0 ||
+            strcmp(ip, "0000:0000:0000:0000:0000:0000:0000:0001") == 0) {
+            int handshake_result = handshake(server, socket);
+            handle_handshake_result(server, handshake_result);
+            return;
+        }
+
+        free((void*)ip);
+    }
+
+    send_conect_reply(server, socket);
+}
+
+
+void handle_handshake_result(server_t* server, int result) {
     switch (result) {
     case HANDSHAKE_OK:
-        applog(LOG_LEVEL_INFO, "[Serveur] Client OK (Handshake).\n");
+        applog(LOG_LEVEL_INFO, "[Serveur] Client OK.\n");
         break;
 
     case HANDSHAKE_BAD_OPCODE:
-        applog(LOG_LEVEL_ERROR, "[Serveur] Mauvais opcode reçu du "
-                                "client. Echec du handshake. Extinction.\n");
-        kill(getppid(), SIGINT);
+        applog(LOG_LEVEL_FATAL, "[Serveur] Mauvais opcode dans le handshake. "
+                               "Arrêt.\n");
         clear_server(server);
+        kill(getppid(), SIGINT);
         exit(EXIT_FAILURE);
         break;
 
     case HANDSHAKE_ALREADY_SHAKED:
         applog(LOG_LEVEL_WARNING, "[Serveur] Multiple handshake.\n");
         break;
-
-    case ACCEPT_FAILURE:
-        applog(LOG_LEVEL_ERROR, "[Serveur] Erreur lors d'accept(). "
-                                "Erreur : %s.\n", strerror(errno));
-        break;
-
-    default:
-        break;
     }
+}
+
+
+void send_conect_reply(const server_t* server, int socket) {
+    pkt_id_t id = SMSG_CONNECT_REPLY;
+    connect_reply_t reply;
+    if (server->handshake == 1) {
+        reply = REPLY_READY;
+    } else {
+        reply = REPLY_NOT_READY;
+    }
+
+    write_to_fd(socket, &id, PKT_ID_LENGTH);
+    write_to_fd(socket, &reply, 1);
 }
 
 

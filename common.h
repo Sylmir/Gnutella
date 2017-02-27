@@ -4,16 +4,6 @@
 /* Common constants, defines and functions to use accross the whole project. */
 
 
-/* Port on which the server will listen and to which clients will talk. */
-/** @todo Move to a .ini file we can parse. */
-#define CONTACT_PORT "10000"
-
-/* IP which will be used as the contact point. */
-/** @todo Move to a .ini file we can parse. */
-/** @todo Add support for IPv4 / IPv6 ? */
-#define CONTACT_POINT "92.94.169.89"
-
-
 /* The name of the executable. */
 #define EXEC_NAME "network"
 

@@ -1,11 +1,5 @@
-ifeq ($(WITH_CORE),)
-	EXTRA_DEFS = -D CORE=0
-else
-	EXTRA_DEFS = -D CORE=1
-endif
-
 CC = gcc
-CFLAGS = -Wall -ggdb -std=c11 $(EXTRA_DEFS)
+CFLAGS = -Wall -ggdb -std=c11
 ALL_SOURCES = $(wildcard *.c)
 ALL_OBJECTS = $(ALL_SOURCES:%.c=%.o)
 
