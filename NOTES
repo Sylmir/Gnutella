@@ -1,0 +1,4 @@
+Ensemble de notes concernant le projet
+  - Est-ce que c'est le client qui tire des nombres pour savoir s'il rejoint chaque serveur ou est-ce
+  que c'est le serveur qui tire un nombre pour déterminer s'il accepte ou non la connexion du serveur
+  ? Actuellement, on est sur le serveur qui tire un nombre pour déterminer s'il accepte ou non.
