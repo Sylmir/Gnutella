@@ -44,10 +44,10 @@ ERROR_CODES_USUAL static int handshake(const client_t* client);
 #define SERVER_UP_CHECK_TIMEOUT_MS SERVER_UP_CHECK_TIMEOUT * IN_MILLISECONDS
 
 
-int run_client() {
+int run_client(const char* connection_port) {
     client_t client;
 
-    int res = attempt_connect_to("127.000.000.001", SERVER_LISTEN_PORT,
+    int res = attempt_connect_to("127.0.0.1", connection_port == NULL ? SERVER_LISTEN_PORT : connection_port,
                                  &(client.server_socket), MAX_SERVER_UP_CHECK,
                                  SERVER_UP_CHECK_TIMEOUT);
     if (res == -1) {

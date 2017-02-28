@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <assert.h>
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
@@ -14,7 +15,7 @@
 #include <unistd.h>
 
 #include "common.h"
-#include "core_server.h"
+#include "list.h"
 #include "log.h"
 #include "networking.h"
 #include "packets_defines.h"
@@ -23,22 +24,25 @@
 #include "util.h"
 
 
+/* As long as this equals 1, the server continues it's loop. */
+__sig_atomic_t _loop = 1;
+
 /* The structure to represent the server. */
 typedef struct server_s {
     /* Socket to wait for new connexions. */
     int listening_socket;
     /* Array of sockets representing the neighbours. */
-    socket_t neighbours[MAX_NEIGHBOURS];
+    int neighbours[MAX_NEIGHBOURS];
     /* Socket to communicate with the client. */
     int client_socket;
     /* Indicate if we performed the handshake. */
     int handshake;
-    /* IP of the contact point. */
-    const char* contact_point_ip;
-    /* Port of the contact point. */
-    const char* contact_point_port;
+    /* Awaiting sockets (i.e, we accepted but we have not yet dealt with them). */
+    list_t* awaiting_sockets;
 } server_t;
 
+
+static void handle_sigint(int sigint);
 
 /* Maximum number of pending requests on the listening socket. */
 #define MAX_PENDING_REQUESTS 50
@@ -68,6 +72,7 @@ static int handshake(server_t *server, int client_socket);
 
 static void handle_handshake_result(server_t* server, int result);
 
+
 /*
  * Join the P2P network. This is done by first requesting a list of neighbours
  * from the contact point. Then, for each possible neighbour we will ask if we
@@ -79,13 +84,16 @@ static void handle_handshake_result(server_t* server, int result);
  *
  * The function will return 0 on success.
  */
-static int join_network(server_t* server);
+static int join_network(server_t* server, const char* ip, const char* port);
 
+/* Port on which the server will listen and to which clients will talk. */
+/** @todo Move to a .ini file we can parse. */
+#define CONTACT_PORT "10000"
 
-/*
- * Send the connection reply.
- */
-static void send_conect_reply(const server_t* server, int socket);
+/* IP which will be used as the contact point. */
+/** @todo Move to a .ini file we can parse. */
+/** @todo Add support for IPv4 / IPv6 ? */
+#define CONTACT_POINT "134.214.88.230"
 
 
 /*
@@ -102,11 +110,43 @@ static void clear_server(server_t* server);
 
 
 /*
- * Loop over the socket that we are waiting or ready. If a socket is waiting,
- * notify the other endpoint that we are ready if the handshake has been done.
- * If a socket is ready, read from it if there is something to read.
+ * Loop over the whole list of awaiting sockets and answers to their requests
+ * if any. If the other extremity of a socket has been closed, we don't answer
+ * and we close it as well.
  */
-static int handle_sockets(server_t* server);
+static void handle_awaiting_sockets(server_t* server);
+
+/*
+ * Check if the socket has something for us and answer the request if necessary.
+ * If there is nothing to read, the function returns 0, otherwise it returns 1.
+ */
+static int handle_awaiting_socket(server_t* server, int socket);
+
+/*
+ * Timeout (milliseconds) when we check if there is something to read on an
+ * awaiting socket.
+ */
+#define AWAIT_TIMEOUT 10
+
+
+/*
+ * Compute a list of neighbours to send through socket.
+ */
+static void compute_and_send_neighbours(server_t* server, int socket);
+
+
+/*
+ * Loop over the neighbours sockets and answers to their requests if any. If the
+ * other extremity of a socket has been closed, we set it to -1 and decrease our
+ * number of neighbours by one.
+ */
+static int handle_neighbours(server_t* server);
+
+
+/*
+ * Check if the client has something to say, and handle the requests if any.
+ */
+static int handle_client(server_t* server);
 
 
 /*
@@ -115,7 +155,7 @@ static int handle_sockets(server_t* server);
  * status ; if the handshake has been done, add it to the waiting list with a
  * SOCKET_READY status.
  */
-static int handle_new_socket(server_t* server, int new_socket);
+static void handle_new_socket(server_t* server, int new_socket);
 
 
 /*
@@ -132,15 +172,22 @@ static void handle_accept_result(server_t* server, int result,
                                  const struct sockaddr* addr, socklen_t addr_len);
 
 
+/*
+ * Add a copy-in-heap of socket inside the list.
+ */
+static void* add_new_socket(void* socket);
+
+
 /*******************************************************************************
  * Packets handling.
  */
 
 
 /*
- * Send a request to host:ip to initiate a communication. The fu
+ * Send a request to host:ip to initiate a communication. The function will
+ * return the socket used to communicate with the server.
  */
-static int get_neighbours(const char* ip, const char* host);
+static int send_neighbours_request(const char* ip, const char* port);
 
 /* Max number of attempts to retrieve the neighbours of someone. */
 #define GET_NEIGHBOURS_MAX_ATTEMPTS 3
@@ -152,7 +199,7 @@ static int get_neighbours(const char* ip, const char* host);
  * Send the join request to ip:host. If ip:host can accept the join, we return
  * the socket used to communicate. Otherwise, we return -1.
  */
-static void send_join_request(const char* ip, const char* host);
+static int send_join_request(const char* ip, const char* port);
 
 
 /*
@@ -164,37 +211,59 @@ static void answer_join_request(int socket);
 /******************************************************************************/
 
 
-int run_server(int first_machine, const char *ip, const char *port) {
+int run_server(int first_machine, const char *listen_port,
+               const char *ip, const char *port) {
     server_t server;
     server.client_socket    = 0;
     server.listening_socket = 0;
-    for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
-        server.neighbours[i].socket = 0;
-        server.neighbours[i].status = SOCKET_CLOSED;
-    }
+    memset(server.neighbours, -1, MAX_NEIGHBOURS * sizeof(int));
     server.handshake        = 0;
 
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        printf("%d\n", server.neighbours[i]);
+    }
+
     char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
-    int listening_socket = create_listening_socket(SERVER_LISTEN_PORT,
+    int listening_socket = create_listening_socket(listen_port == NULL ? SERVER_LISTEN_PORT : listen_port,
                                                    MAX_PENDING_REQUESTS,
                                                    host_name, port_number);
     if (listening_socket < 0) {
-        return listening_socket;
+        applog(LOG_LEVEL_FATAL, "[Serveur] Impossible de créer la socket "
+                                "d'écoute. Extinction.\n");
+        exit(EXIT_FAILURE);
     } else {
         applog(LOG_LEVEL_INFO, "[Serveur] Listening on %s:%s.\n",
                                host_name, port_number);
     }
 
     server.listening_socket = listening_socket;
-    if (ip != NULL) {
-        server.contact_point_ip = ip;
-        server.contact_point_port = port;
-    }
 
     if (first_machine == 0) {
-        join_network(&server);
+        int res;
+        if (ip == NULL) {
+            if (port == NULL) {
+                res = join_network(&server, CONTACT_POINT, CONTACT_PORT);
+            } else {
+                res = join_network(&server, CONTACT_POINT, port);
+            }
+        } else {
+            if (port == NULL) {
+                res = join_network(&server, ip, CONTACT_PORT);
+            } else {
+                res = join_network(&server, ip, port);
+            }
+        }
+
+        if (res == -1) {
+            applog(LOG_LEVEL_FATAL, "[Serveur] Impossible d'acquérir des voisins. "
+                                    "Extinction.\n");
+            close(server.listening_socket);
+            exit(EXIT_FAILURE);
+        }
     }
 
+    server.awaiting_sockets = list_create(compare_ints, add_new_socket);
+    signal(SIGINT, handle_sigint);
     loop(&server);
 
     clear_server(&server);
@@ -203,68 +272,124 @@ int run_server(int first_machine, const char *ip, const char *port) {
 
 
 int loop(server_t* server) {
-    while (1) {
+    while (_loop == 1) {
         struct sockaddr client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
         int res = attempt_accept(server->listening_socket, ACCEPT_TIMEOUT,
                                  &client_addr, &client_addr_len);
 
         handle_accept_result(server, res, &client_addr, client_addr_len);
-
-        handle_sockets(server);
+        handle_awaiting_sockets(server);
+        handle_neighbours(server);
+        handle_client(server);
     }
 
     return 0;
 }
 
 
-int handshake(server_t* server, int client_socket) {
-    if (server->handshake == 1) {
-        return HANDSHAKE_ALREADY_SHAKED;
+int join_network(server_t* server, const char* ip, const char* port) {
+    int socket = send_neighbours_request(ip, port);
+    if (socket == -1) {
+        return -1;
     }
 
-    server->client_socket = client_socket;
+    opcode_t opcode;
+    read_from_fd(socket, &opcode, PKT_ID_SIZE);
 
-    opcode_t client_data;
-    read_from_fd(server->client_socket, &client_data, PKT_ID_SIZE);
-
-    if (client_data != CMSG_INT_HANDSHAKE) {
-        return HANDSHAKE_BAD_OPCODE;
+    if (opcode != SMSG_NEIGHBOURS_REPLY) {
+        close(socket);
+        return -1;
     }
 
-    opcode_t data = SMSG_INT_HANDSHAKE;
-    write_to_fd(server->client_socket, &data, PKT_ID_SIZE);
+    list_t* awaiting = list_create(compare_ints, add_new_socket);
 
-    server->handshake = 1;
-
-    return HANDSHAKE_OK;
-}
+    uint8_t nb_neighbours;
+    read_from_fd(socket, &nb_neighbours, sizeof(uint8_t));
 
 
-int join_network(server_t* server) {
+    for (int i = 0; i < nb_neighbours; i++) {
+        ip_version_id_t version;
+        read_from_fd(socket, &version, IP_VERSION_ID_SIZE);
+
+        uint8_t ip_len;
+        read_from_fd(socket, &ip_len, sizeof(uint8_t));
+
+        char* ip = malloc(ip_len);
+        read_from_fd(socket, ip, ip_len);
+
+        in_port_t port;
+        read_from_fd(socket, &port, sizeof(in_port_t));
+
+        char string_port[6];
+        sprintf(string_port, "%u", port);
+
+        int socket = send_join_request(ip, string_port);
+        if (socket != -1) {
+            list_push_back(awaiting, &socket);
+        }
+
+        free(ip);
+    }
+
+    if (nb_neighbours < MAX_NEIGHBOURS) {
+        struct sockaddr addr;
+        socklen_t len = sizeof(addr);
+
+        getpeername(socket, &addr, &len);
+
+        in_port_t port;
+        const char* ip = extract_ip_classic(&addr, &port);
+        char string_port[6];
+        sprintf(string_port, "%u", port);
+
+        int socket = send_join_request(ip, string_port);
+        if (socket != -1) {
+            list_push_back(awaiting, &socket);
+        }
+
+        free((void*)ip);
+    }
+
+    /************
+     * A FINIR
+     */
+
     return 0;
 }
 
 
-int get_neighbours(const char* ip, const char* host) {
-    return 0;
+int send_neighbours_request(const char* ip, const char* port) {
+    int socket = -1;
+    int res = connect_to(ip, port, &socket);
+    if (res == -1) {
+        return -1;
+    }
+
+    opcode_t opcode = CMSG_NEIGHBOURS_REQUEST;
+    write_to_fd(socket, &opcode, PKT_ID_SIZE);
+
+    return socket;
 }
 
 
-void send_join_request(const char* ip, const char* host) {
+int send_join_request(const char* ip, const char* port) {
+    int socket = -1;
+    int res = connect_to(ip, port, &socket);
+    if (res == -1) {
+        return -1;
+    }
 
-}
+    opcode_t opcode = CMSG_JOIN_REQUEST;
+    write_to_fd(socket, &opcode, PKT_ID_SIZE);
 
-
-void answer_join_request(int socket) {
-
+    return socket;
 }
 
 
 void handle_accept_result(server_t *server, int result,
                           const struct sockaddr* addr, socklen_t addr_len) {
     if (result == ACCEPT_ERR_TIMEOUT) {
-        // applog(LOG_LEVEL_WARNING, "[Serveur] Accept timed out.\n");
         return;
     }
 
@@ -295,12 +420,40 @@ void handle_accept_result(server_t *server, int result,
             int handshake_result = handshake(server, socket);
             handle_handshake_result(server, handshake_result);
             return;
+        } else {
+            handle_new_socket(server, socket);
         }
 
         free((void*)ip);
     }
+}
 
-    send_conect_reply(server, socket);
+
+void handle_new_socket(server_t* server, int new_socket) {
+    list_push_back(server->awaiting_sockets, &new_socket);
+}
+
+
+int handshake(server_t* server, int client_socket) {
+    if (server->handshake == 1) {
+        return HANDSHAKE_ALREADY_SHAKED;
+    }
+
+    server->client_socket = client_socket;
+
+    opcode_t client_data;
+    read_from_fd(server->client_socket, &client_data, PKT_ID_SIZE);
+
+    if (client_data != CMSG_INT_HANDSHAKE) {
+        return HANDSHAKE_BAD_OPCODE;
+    }
+
+    opcode_t data = SMSG_INT_HANDSHAKE;
+    write_to_fd(server->client_socket, &data, PKT_ID_SIZE);
+
+    server->handshake = 1;
+
+    return HANDSHAKE_OK;
 }
 
 
@@ -325,27 +478,79 @@ void handle_handshake_result(server_t* server, int result) {
 }
 
 
-void send_conect_reply(const server_t* server, int socket) {
-    opcode_t id = SMSG_CONNECT_REPLY;
-    connect_reply_t reply;
-    if (server->handshake == 1) {
-        reply = REPLY_READY;
-    } else {
-        reply = REPLY_NOT_READY;
+void handle_awaiting_sockets(server_t* server) {
+    cell_t* prev = NULL;
+    for (cell_t* head = server->awaiting_sockets->head; head != NULL; ) {
+        int res = handle_awaiting_socket(server, *(int*)head->data);
+        if (res == 0) {
+            prev = head;
+            head = head->next;
+        } else {
+            close(*(int*)head->data);
+            list_pop_at(&prev, &head);
+        }
+    }
+}
+
+
+int handle_awaiting_socket(server_t* server, int socket) {
+    struct pollfd poller;
+    int res = poll_fd(&poller, socket, POLLIN, AWAIT_TIMEOUT);
+    if (res == 0) {
+        return 0;
     }
 
-    write_to_fd(socket, &id, PKT_ID_SIZE);
-    write_to_fd(socket, &reply, 1);
+    opcode_t opcode;
+    read_from_fd(socket, &opcode, PKT_ID_SIZE);
+
+    switch (opcode) {
+    case CMSG_NEIGHBOURS_REQUEST:
+        compute_and_send_neighbours(server, socket);
+        break;
+
+    case CMSG_JOIN_REQUEST:
+        answer_join_request(socket);
+        break;
+
+
+    default:
+        break;
+    }
+
+    return 1;
 }
 
 
-int handle_new_socket(server_t* server, int new_socket) {
+void compute_and_send_neighbours(server_t* server, int socket) {
+    uint8_t nb_neighbours = 0;
+    struct sockaddr* neighbours = malloc(MAX_NEIGHBOURS * sizeof(struct sockaddr));
+
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        if (server->neighbours[i] != -1) {
+            socklen_t len = sizeof(*(neighbours + nb_neighbours));
+            getpeername(server->neighbours[i], neighbours + nb_neighbours, &len);
+            nb_neighbours++;
+        }
+    }
+
+    send_neighbours_list(socket, neighbours, nb_neighbours);
+}
+
+
+int handle_neighbours(server_t* server) {
     return 0;
 }
 
 
-int handle_sockets(server_t* server) {
+int handle_client(server_t* server) {
     return 0;
+}
+
+
+void* add_new_socket(void* socket) {
+    int* copy = malloc(sizeof(int));
+    *copy = *(int*)socket;
+    return copy;
 }
 
 
@@ -354,9 +559,24 @@ void clear_server(server_t* server) {
     close(server->client_socket);
 
     for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
-        if (server->neighbours[i].status != SOCKET_CLOSED) {
-            close(server->neighbours[i].socket);
-            server->neighbours[i].status = SOCKET_CLOSED;
-        }
+        close(server->neighbours[i]);
+        server->neighbours[i] = -1;
     }
+
+    for (cell_t* head = server->awaiting_sockets->head; head != NULL; head = head->next) {
+        close(*(int*)head);
+    }
+
+    list_destroy(&(server->awaiting_sockets));
+}
+
+
+void answer_join_request(int socket) {
+
+}
+
+
+void handle_sigint(int sigint) {
+    UNUSED(sigint);
+    _loop = 0;
 }

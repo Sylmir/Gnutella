@@ -2,6 +2,7 @@
 #define NETWORKING_H
 
 struct sockaddr;
+struct pollfd;
 
 #include <sys/types.h>
 
@@ -73,6 +74,9 @@ int create_listening_socket(const char* port, int max_requests,
  */
 int attempt_accept(int listening_socket, int timeout,
                    struct sockaddr* addr, socklen_t* addr_len);
+
+
+int poll_fd(struct pollfd* poller, int fd, int events, int timeout);
 
 /* Timeout reached. */
 #define ACCEPT_ERR_TIMEOUT -2

@@ -21,19 +21,25 @@
 
 
 /* Number of arguments when we want to be super peer. */
-#define ARGV_SU_LENGTH 1
-/* Index of he expected "-s" argument of main. */
+#define ARGV_SU_LENGTH 3
+/* Index of the expected "-s" argument of main. */
 #define ARGV_SU_INDEX 1
-/* Command to un as first machine. */
+/* Index of the expected port number. */
+#define ARGV_SU_PORT_INDEX 2
+/* Command to run as first machine. */
 #define SU_VALUE "-s"
 
 
-/* Numbe of argments when we want to contact someone specific. */
-#define ARGV_CONTACT_POINT_LENGTH 3
+/* Number of argments when we want to contact someone specific. */
+#define ARGV_CONTACT_POINT_LENGTH 4
+/* Index of the expected "-c" argument of main. */
+#define ARGV_CONTACT_INDEX 1
 /* Index of the expected IP argument of main. */
-#define ARGV_IP_INDEX 1
+#define ARGV_IP_INDEX 2
 /* Index of the expected port argument of main. */
-#define ARGV_PORT_INDEX 2
+#define ARGV_PORT_INDEX 3
+/* Command to send an IP:port to get the first neighbours. */
+#define CONTACT_VALUE "-c"
 
 /* Print the correct way to call the application on the standard output. */
 static void usage();
@@ -41,6 +47,17 @@ static void usage();
 
 /* Ensure IP and port are correct. */
 static int ensure_ip_port(const char* ip, const char* port);
+
+
+/* Ensure port is correct. */
+static int ensure_port(const char* port);
+
+
+/* Display msg on the error output, kill the client and exit. */
+static void server_error(const char* msg);
+
+
+static const char* extract_listening_port(int argc, const char** argv);
 
 /******************************************************************************/
 
@@ -71,33 +88,34 @@ int main(int argc, char** argv) {
         return EXIT_CLIENT_NO_FORK;
     } else if (server_pid == 0) {
         int first_node = 0;
-        char* ip = NULL;
-        char* port = NULL;
+        const char* ip = NULL;
+        const char* port = NULL;
+        const char* listening_port = NULL;
 
-        if (argc == ARGV_SU_LENGTH) {
-            if (strcmp(argv[ARGV_SU_LENGTH], SU_VALUE) == 0) {
-                applog(LOG_LEVEL_INFO, "[Server] On est la première machine.\n");
+        if (argc > 1) {
+            if (strcmp(argv[ARGV_SU_INDEX], SU_VALUE) == 0) {
                 first_node = 1;
-            } else {
-                usage();
-                kill(getppid(), SIGINT);
-                exit(EXIT_FAILURE);
-            }
-        } else if (argc == ARGV_CONTACT_POINT_LENGTH) {
-            if (ensure_ip_port(argv[ARGV_IP_INDEX], argv[ARGV_PORT_INDEX]) == 1) {
-                ip = argv[ARGV_IP_INDEX];
-                port = argv[ARGV_PORT_INDEX];
-                applog(LOG_LEVEL_INFO, "[Server] Contact : %s:%s.\n",
-                                       ip, port);
-            } else {
-                usage();
-                kill(getppid(), SIGINT);
-                exit(EXIT_FAILURE);
+                listening_port = extract_listening_port(argc, (const char**)argv);
+                if (listening_port == NULL) {
+                    printf("Port invalide, default utilisé.\n");
+                }
+            } else if (strcmp(argv[ARGV_CONTACT_INDEX], CONTACT_VALUE) == 0) {
+                if (argc == ARGV_CONTACT_POINT_LENGTH) {
+                    if (ensure_ip_port(argv[ARGV_IP_INDEX], argv[ARGV_PORT_INDEX]) == 1) {
+                        ip = argv[ARGV_IP_INDEX];
+                        port = argv[ARGV_PORT_INDEX];
+                        applog(LOG_LEVEL_INFO, "[Server] Contact : %s:%s.\n",
+                                               ip, port);
+                    } else {
+                        server_error("IP ou port invalide.\n");
+                    }
+                }
             }
         }
-        return run_server(first_node, ip, port);
+
+        return run_server(first_node, listening_port, ip, port);
     } else {
-        int res = run_client();
+        int res = run_client(extract_listening_port(argc, (const char**)argv));
         if (res == -1) {
             kill(server_pid, SIGINT);
             return EXIT_FAILURE;
@@ -112,11 +130,11 @@ int main(int argc, char** argv) {
 
 void usage() {
     printf("Usage: \n"
-           "\t./%s [%s | ip port]\n", SU_VALUE, EXEC_NAME);
-    printf("\tIf %s is specified, all forwarding aguments are ignored and the "
-           "server identifies itself as the first machine in the network (and "
-           "wont seach for neighbours) and will be used as contact point.\n",
-           SU_VALUE);
+           "\t./%s [%s port | ip port]\n", EXEC_NAME, SU_VALUE);
+    printf("\tIf %s is specified, the forwarding agument represent the port on "
+           "which the server will listen. it then identifies itself as the first "
+           "machine in the network (and won't seach for neighbours) and will be "
+           "used as contact point.\n", SU_VALUE);
     printf("\tIf ip and port are specified (both arguments must be) the server "
            "will contact ip:port to get it's first neighbours.\n");
     printf("If no arguments are specified, the server will look in the hosts "
@@ -124,14 +142,8 @@ void usage() {
 }
 
 
-int ensure_ip_port(const char* ip, const char* aport) {
-    char* tmp;
-    long port = strtol(aport, &tmp, 10);
-    if (*tmp != '\0') {
-        return 0;
-    }
-
-    if (port < 1025 || port > 65535) {
+int ensure_ip_port(const char* ip, const char* port) {
+    if (ensure_port(port) == 0) {
         return 0;
     }
 
@@ -149,4 +161,43 @@ int ensure_ip_port(const char* ip, const char* aport) {
     }
 
     return 0;
+}
+
+
+int ensure_port(const char* port) {
+    char* tmp;
+    long l_port = strtol(port, &tmp, 10);
+    if (*tmp != '\0') {
+        return 0;
+    }
+
+    if (l_port < 1025 || l_port > 65535) {
+        return 0;
+    }
+
+    return 1;
+}
+
+
+void server_error(const char* msg) {
+    if (msg != NULL) {
+        fprintf(stderr, msg);
+    }
+
+    usage();
+    kill(getppid(), SIGINT);
+    exit(EXIT_FAILURE);
+}
+
+
+const char* extract_listening_port(int argc, const char** argv) {
+    if (argc != ARGV_SU_LENGTH) {
+        return NULL;
+    }
+
+    if (ensure_port(argv[ARGV_SU_PORT_INDEX]) == 0) {
+        return NULL;
+    }
+
+    return argv[ARGV_SU_PORT_INDEX];
 }

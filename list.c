@@ -2,15 +2,21 @@
 
 #include "list.h"
 
-list_t* list_create(compare_fn compare) {
+list_t* list_create(compare_fn compare, create_fn create) {
     list_t* list = malloc(sizeof(list_t));
     list->compare = compare;
+    list->create = create;
     list->head = NULL;
     return list;
 }
 
 
-void list_push_back(list_t* list, void* data) {
+void list_push_back(list_t* list, void* value) {
+    list_push_back_no_create(list, list->create(value));
+}
+
+
+void list_push_back_no_create(list_t *list, void* data) {
     cell_t* head = list->head;
     cell_t* prev = NULL;
 

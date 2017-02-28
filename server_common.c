@@ -63,12 +63,15 @@ const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port) {
 
 
 void send_neighbours_list(int socket, struct sockaddr *neighbours,
-                          int nb_neighbours) {
-    void* data = malloc(PKT_ID_SIZE +
-                        nb_neighbours * (IP_VERSION_ID_SIZE + INET6_ADDRSTRLEN + sizeof(in_port_t)));
+                          uint8_t nb_neighbours) {
+    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
+                        nb_neighbours * (IP_VERSION_ID_SIZE + INET6_ADDRSTRLEN + sizeof(in_port_t)) + sizeof(uint8_t));
     char* ptr = (char*)data;
     *(opcode_t*)ptr = SMSG_NEIGHBOURS_REPLY;
     ptr += PKT_ID_SIZE;
+
+    *(uint8_t*)ptr = nb_neighbours;
+    ptr += sizeof(uint8_t);
 
     for (int i = 0; i < nb_neighbours; i++) {
         if ((neighbours + i)->sa_family == AF_INET) {

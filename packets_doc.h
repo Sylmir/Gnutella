@@ -68,10 +68,6 @@
  * Content:
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
- *  - 1 byte to store the answer code. This answer might be one of the constants
- * defined in the smsg_neighbours_reply_t enumeration.
- *  - If the answer code is NEIGHBOURS_OK, we continue. Otherwise we stop right
- * here.
  *  - 1 byte to store the number of neighbours we are transmitting.
  *  - Each neighbours is subsequently transmitted by sending both the IP adress
  * and the port used to contact it. For each neighbour transmitted, we format
@@ -81,6 +77,9 @@
  * struct in_addr6. The size of this field is indicated by the version of the IP
  * protocol we are using.
  *      - 2 bytes to represent the port to contact.
+ *  - Finally, one byte to indicate if the client can add the server it
+ * interrogated as a neighbour. This byte is set to true if the server is sending
+ * less than MAX_NEIGHBOURS neighbours.
  */
 
 
@@ -109,17 +108,3 @@
  *  - 1 byte to store the answer. The answer is expected to be one of the
  * constants defines in the
  */
-
-/*
- * #define SMSG_CONNECT_REPLY SMSG(2)
- *
- * Description: automatically send by a server whenever a client attempts a
- * connection. A server is considered ready when it has performed it's handshake
- * with its local client. While the handshake has not been performed, the server
- * is not expected to answer to any requests.
- *
- * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
- * itself.
- *  - 1 byte to indicate if we are ready or not. The value is expected to be one
- * of the constants defined in
