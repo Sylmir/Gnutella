@@ -47,7 +47,7 @@ ERROR_CODES_USUAL static int handshake(const client_t* client);
 int run_client() {
     client_t client;
 
-    int res = attempt_connect_to("127.0.0.1", SERVER_LISTEN_PORT,
+    int res = attempt_connect_to("127.000.000.001", SERVER_LISTEN_PORT,
                                  &(client.server_socket), MAX_SERVER_UP_CHECK,
                                  SERVER_UP_CHECK_TIMEOUT);
     if (res == -1) {

@@ -33,6 +33,10 @@ typedef struct server_s {
     int client_socket;
     /* Indicate if we performed the handshake. */
     int handshake;
+    /* IP of the contact point. */
+    const char* contact_point_ip;
+    /* Port of the contact point. */
+    const char* contact_point_port;
 } server_t;
 
 
@@ -134,9 +138,14 @@ static void handle_accept_result(server_t* server, int result,
 
 
 /*
- * Send a request for the neighbours of ip:host.
+ * Send a request to host:ip to initiate a communication. The fu
  */
-static void get_neighbours(const char* ip, const char* host);
+static int get_neighbours(const char* ip, const char* host);
+
+/* Max number of attempts to retrieve the neighbours of someone. */
+#define GET_NEIGHBOURS_MAX_ATTEMPTS 3
+/* Sleep time when we try to get neighbours (seconds). */
+#define GET_NEIGHBOURS_SLEEP_TIME 1
 
 
 /*
@@ -155,7 +164,7 @@ static void answer_join_request(int socket);
 /******************************************************************************/
 
 
-int run_server() {
+int run_server(int first_machine, const char *ip, const char *port) {
     server_t server;
     server.client_socket    = 0;
     server.listening_socket = 0;
@@ -164,7 +173,6 @@ int run_server() {
         server.neighbours[i].status = SOCKET_CLOSED;
     }
     server.handshake        = 0;
-    // server.contact_point    = (CORE == 1);
 
     char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
     int listening_socket = create_listening_socket(SERVER_LISTEN_PORT,
@@ -178,7 +186,14 @@ int run_server() {
     }
 
     server.listening_socket = listening_socket;
-    join_network(&server);
+    if (ip != NULL) {
+        server.contact_point_ip = ip;
+        server.contact_point_port = port;
+    }
+
+    if (first_machine == 0) {
+        join_network(&server);
+    }
 
     loop(&server);
 
@@ -227,13 +242,12 @@ int handshake(server_t* server, int client_socket) {
 
 
 int join_network(server_t* server) {
-    get_neighbours(CONTACT_POINT, CONTACT_PORT);
     return 0;
 }
 
 
-void get_neighbours(const char* ip, const char* host) {
-
+int get_neighbours(const char* ip, const char* host) {
+    return 0;
 }
 
 

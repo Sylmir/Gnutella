@@ -19,7 +19,7 @@ typedef struct list_s {
 list_t* list_create(compare_fn compare);
 void list_push_back(list_t* list, void* data);
 void list_pop(list_t* list, void* data, int once);
-void list_pop_at(cell_t** at);
+void list_pop_at(cell_t** prev, cell_t** at);
 void list_clear(list_t* list);
 void list_destroy(list_t** list);
 

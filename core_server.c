@@ -141,8 +141,10 @@ void loop(core_server_t* server) {
         int socket = attempt_accept(server->listening_socket, ACCEPT_TIMEOUT,
                                     &addr, &addr_len);
         if (socket < 0) {
-            applog(LOG_LEVEL_ERROR, "[Core server] accept error %s.\n",
+            if (socket == -1) {
+                applog(LOG_LEVEL_ERROR, "[Core server] accept error %s.\n",
                                     strerror(errno));
+            }
             continue;
         }
 
@@ -168,6 +170,7 @@ void handle_new_socket(core_server_t* server, int socket,
 
 
 void handle_awaiting_sockets(core_server_t* server) {
+    cell_t* prev = NULL;
     for (cell_t* cell = server->awaiting_sockets->head; cell != NULL; ) {
         struct pollfd poller;
         poller.fd = *(int*)cell->data;
@@ -181,14 +184,17 @@ void handle_awaiting_sockets(core_server_t* server) {
              */
             if ((poller.revents & POLLHUP) != 0) {
                 close(poller.fd);
-                list_pop_at(&cell);
+                list_pop_at(&prev, &cell);
             } else if ((poller.revents & POLLIN) != 0) {
                 if (ensure_opcode(poller.fd)) {
                     compute_and_send_neighbours_list(server, poller.fd);
                     close(poller.fd);
-                    list_pop_at(&cell);
+                    list_pop_at(&prev, &cell);
                 }
             }
+        } else {
+            prev = cell;
+            cell = cell->next;
         }
     }
 }
@@ -276,5 +282,7 @@ int main() {
 
 void handle_sigint(int sigint) {
     UNUSED(sigint);
+    const char* msg= "Arrêt.\n";
+    write(STDOUT_FILENO, msg, strlen(msg));
     _loop = 0;
 }
