@@ -67,7 +67,7 @@ void send_neighbours_list(int socket, struct sockaddr *neighbours,
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
                         nb_neighbours * (IP_VERSION_ID_SIZE + INET6_ADDRSTRLEN + sizeof(in_port_t)) + sizeof(uint8_t));
     char* ptr = (char*)data;
-    *(opcode_t*)ptr = SMSG_NEIGHBOURS_REPLY;
+    *(opcode_t*)ptr = SMSG_NEIGHBOURS;
     ptr += PKT_ID_SIZE;
 
     *(uint8_t*)ptr = nb_neighbours;

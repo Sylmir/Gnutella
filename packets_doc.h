@@ -48,7 +48,7 @@
 
 
 /*
- * #define CMSG_NEIGHBOURS_REQUEST CMSG(0)
+ * #define CMSG_NEIGHBOURS CMSG(0)
  *
  * Description: a client asks for the neighbours of a server.
  *
@@ -56,12 +56,12 @@
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
  *
- * Expected answer : SMSG_NEIGHBOURS_REPLY.
+ * Expected answer : SMSG_NEIGHBOURS.
  */
 
 
 /*
- * #define SMSG_NEIGHBOURS_REPLY SMSG(0)
+ * #define SMSG_NEIGHBOURS SMSG(0)
  *
  * Description: a server answers the request of a client for it's neighbours.
  *
@@ -73,31 +73,30 @@
  * and the port used to contact it. For each neighbour transmitted, we format
  * like that:
  *      - 1 byte to indicate which version of the IP protocol the IP refers to.
- *      - The numeric representation of the IP adress as in struct in_addr or
- * struct in_addr6. The size of this field is indicated by the version of the IP
- * protocol we are using.
+ *      - 1 byte to store the length of the IP adress (string representation),
+ * therefore refered to as ip_len.
+ *      - ip_len bytes to store the IP adress in string representation.
  *      - 2 bytes to represent the port to contact.
- *  - Finally, one byte to indicate if the client can add the server it
- * interrogated as a neighbour. This byte is set to true if the server is sending
- * less than MAX_NEIGHBOURS neighbours.
  */
 
 
 /*
- * #define CMSG_JOIN_REQUEST CMSG(1)
+ * #define CMSG_JOIN CMSG(1)
  *
  * Description: a client asks a server to become it's neighbour.
  *
  * Content:
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
+ *  - 1 byte indicating the "rescue" flag. When this flag is set to 1, the server
+ * cannot refuse the connection.
  *
- * Exepcted answer : SMSG_JOIN_REPLY.
+ * Exepcted answer : SMSG_JOIN.
  */
 
 
 /*
- * #define SMSG_JOIN_REPLY SMSG(1)
+ * #define SMSG_JOIN SMSG(1)
  *
  * Description: a server answers a client with "yes" or "no" when it comes to
  * becoming a neighbour.
@@ -105,6 +104,37 @@
  * Content:
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
- *  - 1 byte to store the answer. The answer is expected to be one of the
- * constants defines in the
+ *  - 1 byte to store the answer. Note that this byte cannot be set to 0 if the
+ * corresponding CMSG_JOIN has the rescue flag enabled.
+ */
+
+
+/*
+ * #define CMSG_NEIGHBOUR_RESCUE CMSG(2)
+ *
+ * Description: when a client realizes one of its neighbours has closed
+ * connection, it asks for a neighbour of one of its neighbours, creating a
+ * loop inside a network, preventing it from splitting in two if more server
+ * close connection.
+ *
+ * Content:
+ *  - PKT_ID_LENGTH bytes to represent the opcode.
+ *
+ * Expected answer : SMSG_NEIGHBOUR_RESCUE.
+ */
+
+
+/*
+ * #define SMSG_NEIGHBOUR_RESCUE SMSG(2)
+ *
+ * Description: a server answers the rescue request of a client with one of its
+ * own neighbours.
+ *
+ * Content:
+ *  - PKT_ID_LENGTH bytes to represent the opcode.
+ *  - 1 byte to indicate the version of the IP protocol.
+ *  - 1 byte to indicate the length of the IP adress in string representation,
+ * therefore refered to as ip_len.
+ *  - ip_len bytes to store the IP adress in string representation.
+ *  - 2 bytes to store the port used to contact the server.
  */

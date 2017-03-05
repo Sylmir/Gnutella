@@ -5,6 +5,17 @@ typedef int(*compare_fn)(void* lhs, void* rhs);
 typedef void*(*create_fn)(void* data);
 
 
+/*
+ * Dummy macro to identfy that a function is used as a compare_fn inside a list.
+ */
+#define LIST_COMPARE_FN
+
+
+/*
+ * Dummy macro to identify that a function is used as a create_fn inside a list.
+ */
+#define LIST_CREATE_FN
+
 typedef struct cell_s {
     struct cell_s* next;
     void* data;

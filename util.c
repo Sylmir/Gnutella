@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 
+#include <stdio.h>
 #include <stdlib.h>
+
 #include <unistd.h>
 
 #include "util.h"
@@ -47,4 +49,37 @@ int compare_ints(void* lhs, void* rhs) {
     } else {
         return 1;
     }
+}
+
+
+void int_to_string(int src, char* dst) {
+    sprintf(dst, "%u", src);
+}
+
+
+const char* int_to_cstring(int src) {
+    int length  = get_number_of_digits_in(src);
+    if (src < 0) {
+        ++length;
+    }
+
+    char* result = malloc(length);
+    int_to_string(src, result);
+    return result;
+}
+
+
+int get_number_of_digits_in(int src) {
+    int nb_digits = 1; /* Every single number is at least one digit long. */
+    while (abs(src) >= 10) {
+        src /= 10;
+        nb_digits++;
+    }
+
+    return nb_digits;
+}
+
+
+void const_free(const void* ptr) {
+    free((void*)ptr);
 }

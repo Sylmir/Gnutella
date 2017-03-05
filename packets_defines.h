@@ -27,15 +27,19 @@ typedef uint8_t opcode_t;
 
 
 /* Client asks for a list of neighbours. */
-#define CMSG_NEIGHBOURS_REQUEST CMSG(0)
+#define CMSG_NEIGHBOURS CMSG(0)
 /* Client asks to become neighbour. */
-#define CMSG_JOIN_REQUEST CMSG(1)
+#define CMSG_JOIN CMSG(1)
+/* Client asks for a single neighbour from the target. */
+#define CMSG_NEIGHBOUR_RESCUE CMSG(2)
 
 
 /* Server replies with it's direct neighbours. */
-#define SMSG_NEIGHBOURS_REPLY SMSG(0)
+#define SMSG_NEIGHBOURS SMSG(0)
 /* Server replies with "yes" or "no". */
-#define SMSG_JOIN_REPLY SMSG(1)
+#define SMSG_JOIN SMSG(1)
+/* Server replies with a neighbour. */
+#define SMSG_NEIGHBOUR_RESCUE SMSG(2)
 
 
 /* Client contact server to notify it's ready. */
