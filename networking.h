@@ -76,13 +76,6 @@ int attempt_accept(int listening_socket, int timeout,
                    struct sockaddr* addr, socklen_t* addr_len);
 
 
-/*
- * Perform a poll by filling poller with fd and events. The function subsequently
- * calls poll() on poller, using timeout as it's timeout parameter. The function
- * then returns the same as poll(poller, 1, timeout).
- */
-int poll_fd(struct pollfd* poller, int fd, int events, int timeout);
-
 /* Timeout reached. */
 #define ACCEPT_ERR_TIMEOUT -2
 

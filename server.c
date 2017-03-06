@@ -20,30 +20,16 @@
 #include "networking.h"
 #include "packets_defines.h"
 #include "server.h"
-#include "server_common.h"
+#include "server_internal.h"
 #include "util.h"
 
 
 /* As long as this equals 1, the server continues it's loop. */
 sig_atomic_t _loop = 1;
 
-/* The structure to represent the server. */
-typedef struct server_s {
-    /* Socket to wait for new connexions. */
-    int listening_socket;
-    /* Array of sockets representing the neighbours. */
-    int neighbours[MAX_NEIGHBOURS];
-    /* Our current number of neighbours. */
-    int nb_neighbours;
-    /* Socket to communicate with the client. */
-    int client_socket;
-    /* Indicate if we performed the handshake. */
-    int handshake;
-    /* Awaiting sockets (i.e, we accepted but we have not yet dealt with them). */
-    list_t* awaiting_sockets;
-} server_t;
-
-
+/*
+ * SIGINT handler.
+ */
 static void handle_sigint(int sigint);
 
 /* Maximum number of pending requests on the listening socket. */
@@ -76,51 +62,6 @@ static void handle_handshake_result(server_t* server, int result);
 
 
 /*
- * Join the P2P network. This is done by first requesting a list of neighbours
- * from the contact point. Then, for each possible neighbour we will ask if we
- * can join. The server will then answer with 'yes' or 'no'.
- *
- * For each neighbour we get, we store a socket inside server->neighbours.
- *
- * The function will return 0 on success, -1 on failure.
- *
- * Note: this function is a helper function used to reduce the amont of if / else
- * int run_server. It basically calls join_network_through with the correct
- * parameters depending on if ip and / or port are NULL.
- */
-static int join_network(server_t* server, const char* ip, const char* port);
-
-
-/*
- * Actively join the P2P network (join_network acting as a helper function). The
- * function will return 0 on success, and -1 on failure.
- */
-static int join_network_through(server_t* server, const char* ip, const char* port);
-
-
-/*
- * Extract the next neighbour from socket (assuming we are handling SMSG_NEIGHBOURS_REPLY).
- * The IP and port are stored inside ip and port.
- */
-static void extract_neighbour_from_response(int socket, char **ip, char **port);
-
-
-/*
- * Extract the IP and port bound to socket and store them inside ip and port.
- */
-static void extract_neighbour_from_socket(int socket, char** ip, char** port);
-
-/* Port on which the server will listen and to which clients will talk. */
-/** @todo Move to a .ini file we can parse. */
-#define CONTACT_PORT "10000"
-
-/* IP which will be used as the contact point. */
-/** @todo Move to a .ini file we can parse. */
-/** @todo Add support for IPv4 / IPv6 ? */
-#define CONTACT_POINT "134.214.88.230"
-
-
-/*
  * Perform the server main loop.
  */
 static int loop(server_t* server);
@@ -146,27 +87,6 @@ static void handle_awaiting_sockets(server_t* server);
  * If there is nothing to read, the function returns 0, otherwise it returns 1.
  */
 static int handle_awaiting_socket(server_t* server, int socket);
-
-/*
- * Timeout (milliseconds) when we check if there is something to read on an
- * awaiting socket.
- */
-#define AWAIT_TIMEOUT 10
-
-
-/*
- * Helper to avoid redundancy. Send a join request to ip:port and store the
- * communicating socket inside sockets. ip and port are both freed at the
- * end of the function (no, I'm not going to make a version where the free
- * is not called, just malloc your damn buffers).
- */
-static void join(const char* ip, const char* port, list_t* sockets);
-
-
-/*
- * Compute a list of neighbours to send through socket.
- */
-static void compute_and_send_neighbours(server_t* server, int socket);
 
 
 /*
@@ -204,43 +124,6 @@ static void handle_new_socket(server_t* server, int new_socket);
  */
 static void handle_accept_result(server_t* server, int result,
                                  const struct sockaddr* addr, socklen_t addr_len);
-
-
-/*
- * Add a copy-in-heap of socket inside a list (creating function).
- */
-LIST_CREATE_FN static void* add_new_socket(void* socket);
-
-
-/*******************************************************************************
- * Packets handling.
- */
-
-
-/*
- * Send a request to host:ip to initiate a communication. The function will
- * return the socket used to communicate with the server.
- */
-static int send_neighbours_request(const char* ip, const char* port);
-
-/* Max number of attempts to retrieve the neighbours of someone. */
-#define GET_NEIGHBOURS_MAX_ATTEMPTS 3
-/* Sleep time when we try to get neighbours (seconds). */
-#define GET_NEIGHBOURS_SLEEP_TIME 1
-
-
-/*
- * Send the join request to ip:host. If ip:host can accept the join, we return
- * the socket used to communicate. Otherwise, we return -1. rescue indicates if
- * the rescue flag is to be set to 1 or 0.
- */
-static int send_join_request(const char* ip, const char* port, uint8_t rescue);
-
-
-/*
- * Answer to a join request through the socket.
- */
-static void answer_join_request(int socket);
 
 
 /******************************************************************************/
@@ -305,138 +188,6 @@ int loop(server_t* server) {
     }
 
     return 0;
-}
-
-
-int join_network(server_t* server, const char* ip, const char* port) {
-    int res;
-
-    if (ip == NULL) {
-        if (port == NULL) {
-            res = join_network_through(server, CONTACT_POINT, CONTACT_PORT);
-        } else {
-            res = join_network_through(server, CONTACT_POINT, port);
-        }
-    } else {
-        if (port == NULL) {
-            res = join_network_through(server, ip, CONTACT_PORT);
-        } else {
-            res = join_network_through(server, ip, port);
-        }
-    }
-
-    return res;
-}
-
-
-int join_network_through(server_t* server, const char* ip, const char* port) {
-    int socket = send_neighbours_request(ip, port);
-    if (socket == -1) {
-        return -1;
-    }
-
-    opcode_t opcode;
-    read_from_fd(socket, &opcode, PKT_ID_SIZE);
-
-    if (opcode != SMSG_NEIGHBOURS) {
-        close(socket);
-        return -1;
-    }
-
-    /* Store the sockets we send CMSG_JOIN_REQUEST through. */
-    list_t* awaiting = list_create(compare_ints, add_new_socket);
-
-    uint8_t nb_neighbours;
-    read_from_fd(socket, &nb_neighbours, sizeof(uint8_t));
-
-
-    char *current_ip, *current_port;
-    for (int i = 0; i < nb_neighbours; i++) {
-        extract_neighbour_from_response(socket, &current_ip, &current_port);
-        join(current_ip, current_port, awaiting);
-    }
-
-    if (nb_neighbours < MAX_NEIGHBOURS) {
-        extract_neighbour_from_socket(socket, &current_ip, &current_port);
-        join(current_ip, current_port, awaiting);
-    }
-
-    cell_t* prev = NULL;
-    for (cell_t* cell = awaiting->head; cell != NULL; ) {
-        int socket = *(int*)cell->data;
-        struct pollfd poller;
-        int res = poll_fd(&poller, socket, POLLIN, AWAIT_TIMEOUT);
-        if (res == 1) {
-            list_pop_at(&prev, &cell);
-        }
-        prev = cell;
-    }
-
-    list_destroy(&awaiting);
-
-    return 0;
-}
-
-
-void extract_neighbour_from_response(int socket, char** ip, char** port) {
-    ip_version_id_t version;
-    read_from_fd(socket, &version, IP_VERSION_ID_SIZE);
-
-    uint8_t ip_len;
-    read_from_fd(socket, &ip_len, sizeof(uint8_t));
-
-    *ip = malloc(ip_len);
-    read_from_fd(socket, *ip, ip_len);
-
-    in_port_t iport;
-    read_from_fd(socket, &iport, sizeof(in_port_t));
-
-    *port = (char*)int_to_cstring(iport);
-}
-
-
-void extract_neighbour_from_socket(int socket, char** ip, char** port) {
-    struct sockaddr addr;
-    socklen_t len = sizeof(addr);
-
-    getpeername(socket, &addr, &len);
-
-    in_port_t iport;
-    *ip = (char*)extract_ip_classic(&addr, &iport);
-    *port = (char*)int_to_cstring(iport);
-}
-
-int send_neighbours_request(const char* ip, const char* port) {
-    int socket = -1;
-    int res = connect_to(ip, port, &socket);
-    if (res == -1) {
-        return -1;
-    }
-
-    opcode_t opcode = CMSG_NEIGHBOURS;
-    write_to_fd(socket, &opcode, PKT_ID_SIZE);
-
-    return socket;
-}
-
-
-int send_join_request(const char* ip, const char* port, uint8_t rescue) {
-    int socket = -1;
-    int res = connect_to(ip, port, &socket);
-    if (res == -1) {
-        return -1;
-    }
-
-    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t));
-    char* ptr = data;
-    *(opcode_t*)ptr = CMSG_JOIN;
-    ptr += PKT_ID_SIZE;
-    *(uint8_t*)ptr = rescue;
-    ptr += sizeof(uint8_t);
-
-    write_to_fd(socket, data, (intptr_t)ptr - (intptr_t)data);
-
-    return socket;
 }
 
 
@@ -574,35 +325,6 @@ int handle_awaiting_socket(server_t* server, int socket) {
 }
 
 
-void compute_and_send_neighbours(server_t* server, int socket) {
-    uint8_t nb_neighbours = 0;
-    struct sockaddr* neighbours = malloc(MAX_NEIGHBOURS * sizeof(struct sockaddr));
-
-    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
-        if (server->neighbours[i] != -1) {
-            socklen_t len = sizeof(*(neighbours + nb_neighbours));
-            getpeername(server->neighbours[i], neighbours + nb_neighbours, &len);
-            nb_neighbours++;
-        }
-    }
-
-    send_neighbours_list(socket, neighbours, nb_neighbours);
-}
-
-
-void join(const char* ip, const char* port, list_t* sockets) {
-    int res = send_join_request(ip, port, 0);
-    if (res == -1) {
-        return;
-    }
-
-    list_push_back(sockets, &res);
-
-    const_free(ip);
-    const_free(port);
-}
-
-
 int handle_neighbours(server_t* server) {
     return 0;
 }
@@ -610,13 +332,6 @@ int handle_neighbours(server_t* server) {
 
 int handle_client(server_t* server) {
     return 0;
-}
-
-
-void* add_new_socket(void* socket) {
-    int* copy = malloc(sizeof(int));
-    *copy = *(int*)socket;
-    return copy;
 }
 
 
@@ -634,11 +349,6 @@ void clear_server(server_t* server) {
     }
 
     list_destroy(&(server->awaiting_sockets));
-}
-
-
-void answer_join_request(int socket) {
-
 }
 
 

@@ -188,12 +188,3 @@ int attempt_accept(int listening_socket, int timeout,
 
     return ACCEPT_ERR_TIMEOUT;
 }
-
-
-int poll_fd(struct pollfd* poller, int fd, int events, int timeout) {
-    poller->fd = fd;
-    poller->events = events;
-    poller->revents = 0;
-
-    return poll(poller, 1, timeout);
-}

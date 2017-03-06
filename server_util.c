@@ -1,18 +1,51 @@
 #define _GNU_SOURCE
 
 #include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
 #include "packets_defines.h"
-#include "server_common.h"
+#include "server_internal.h"
 #include "util.h"
+
+
+void extract_neighbour_from_response(int socket, char** ip, char** port) {
+    ip_version_id_t version;
+    read_from_fd(socket, &version, IP_VERSION_ID_SIZE);
+
+    uint8_t ip_len;
+    read_from_fd(socket, &ip_len, sizeof(uint8_t));
+
+    *ip = malloc(ip_len);
+    read_from_fd(socket, *ip, ip_len);
+
+    in_port_t iport;
+    read_from_fd(socket, &iport, sizeof(in_port_t));
+
+    *port = (char*)int_to_cstring(iport);
+}
+
+
+void extract_neighbour_from_socket(int socket, char** ip, char** port) {
+    struct sockaddr addr;
+    socklen_t len = sizeof(addr);
+
+    getpeername(socket, &addr, &len);
+
+    in_port_t iport;
+    *ip = (char*)extract_ip_classic(&addr, &iport);
+    *port = (char*)int_to_cstring(iport);
+}
+
+
+void* add_new_socket(void* socket) {
+    int* copy = malloc(sizeof(int));
+    *copy = *(int*)socket;
+    return copy;
+}
 
 
 const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port) {
@@ -62,42 +95,17 @@ const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port) {
 }
 
 
-void send_neighbours_list(int socket, struct sockaddr *neighbours,
-                          uint8_t nb_neighbours) {
-    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
-                        nb_neighbours * (IP_VERSION_ID_SIZE + INET6_ADDRSTRLEN + sizeof(in_port_t)) + sizeof(uint8_t));
-    char* ptr = (char*)data;
-    *(opcode_t*)ptr = SMSG_NEIGHBOURS;
-    ptr += PKT_ID_SIZE;
+void compute_and_send_neighbours(server_t* server, int socket) {
+    uint8_t nb_neighbours = 0;
+    struct sockaddr* neighbours = malloc(MAX_NEIGHBOURS * sizeof(struct sockaddr));
 
-    *(uint8_t*)ptr = nb_neighbours;
-    ptr += sizeof(uint8_t);
-
-    for (int i = 0; i < nb_neighbours; i++) {
-        if ((neighbours + i)->sa_family == AF_INET) {
-            *(ip_version_id_t*)ptr = 4;
-        } else if ((neighbours + i)->sa_family == AF_INET6) {
-            *(ip_version_id_t*)ptr = 6;
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        if (server->neighbours[i] != -1) {
+            socklen_t len = sizeof(*(neighbours + nb_neighbours));
+            getpeername(server->neighbours[i], neighbours + nb_neighbours, &len);
+            nb_neighbours++;
         }
-        ptr += IP_VERSION_ID_SIZE;
-
-        in_port_t port;
-        const char* ip = extract_ip_classic(neighbours + i, &port);
-
-        *(uint8_t*)ptr = strlen(ip);
-        ptr += sizeof(uint8_t);
-
-        memcpy(ptr, ip, strlen(ip));
-        ptr += strlen(ip);
-
-        *(in_port_t*)ptr = port;
-        ptr += sizeof(in_port_t);
     }
 
-    ptrdiff_t length = (ptrdiff_t)ptr - (ptrdiff_t)data;
-    assert(length >= 0);
-
-    write_to_fd(socket, data, (size_t)length);
-
-    free(data);
+    send_neighbours_list(socket, neighbours, nb_neighbours);
 }

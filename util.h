@@ -7,6 +7,8 @@
 #include "list.h"
 
 
+struct pollfd;
+
 /*
  * Write the content of buffer up to size bytes in the file designed by fd.
  * If an error occurs during one write, the function returns -1, otherwise
@@ -59,5 +61,20 @@ const char* int_to_cstring(int src);
 int get_number_of_digits_in(int src);
 
 
+/*
+ * Version of free that takes a const pointer instead of a non-const pointer.
+ * Because I'm tired of casting my strings from const char* to char*.
+ * Stupid GCC.
+ */
 void const_free(const void* ptr);
+
+
+/*
+ * Perform a poll by filling poller with fd and events. The function subsequently
+ * calls poll() on poller, using timeout as it's timeout parameter. The function
+ * then returns the same as poll(poller, 1, timeout).
+ */
+int poll_fd(struct pollfd* poller, int fd, int events, int timeout);
+
+
 #endif /* UTIL_H */

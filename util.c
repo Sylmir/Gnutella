@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <poll.h>
 #include <unistd.h>
 
 #include "util.h"
@@ -82,4 +83,13 @@ int get_number_of_digits_in(int src) {
 
 void const_free(const void* ptr) {
     free((void*)ptr);
+}
+
+
+int poll_fd(struct pollfd* poller, int fd, int events, int timeout) {
+    poller->fd = fd;
+    poller->events = events;
+    poller->revents = 0;
+
+    return poll(poller, 1, timeout);
 }
