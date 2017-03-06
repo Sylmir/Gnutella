@@ -28,6 +28,10 @@ typedef struct server_s {
 } server_t;
 
 
+/*******************************************************************************
+ * Join the network
+ */
+
 /*
  * Join the P2P network. This is done by first requesting a list of neighbours
  * from the contact point. Then, for each possible neighbour we will ask if we
@@ -79,30 +83,6 @@ void join(const char* ip, const char* port, list_t* sockets);
 void compute_and_send_neighbours(server_t* server, int socket);
 
 
-/*
- * Extract the IP adress from addr if it's family is AF_INET or AF_INET6. The
- * result of this function is the same as if inet_ntop was called with the
- * correct arguments to extract the IP from addr casted to the appropriate
- * structure.
- *
- * This means that you must free the pointer returned by the function.
- */
-const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port);
-
-
-/*
- * Same as extract_ip, works with struct sockaddr instead.
- */
-const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port);
-
-
-/*
- * Send the neighbours to the client on the "other side" of socket.
- */
-void send_neighbours_list(int socket, struct sockaddr* neighbours,
-                          uint8_t nb_neighbours);
-
-
 /*******************************************************************************
  * Packets handling.
  */
@@ -134,9 +114,39 @@ int send_join_request(const char* ip, const char* port, uint8_t rescue);
 void answer_join_request(int socket);
 
 
+
+/*
+ * Send the neighbours to the client on the "other side" of socket.
+ */
+void send_neighbours_list(int socket, struct sockaddr* neighbours,
+                          uint8_t nb_neighbours);
+
+
+/*******************************************************************************
+ * Utilities
+ */
+
+
 /*
  * Add a copy-in-heap of socket inside a list (creating function).
  */
 LIST_CREATE_FN void* add_new_socket(void* socket);
+
+
+/*
+ * Extract the IP adress from addr if it's family is AF_INET or AF_INET6. The
+ * result of this function is the same as if inet_ntop was called with the
+ * correct arguments to extract the IP from addr casted to the appropriate
+ * structure.
+ *
+ * This means that you must free the pointer returned by the function.
+ */
+const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port);
+
+
+/*
+ * Same as extract_ip, works with struct sockaddr instead.
+ */
+const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port);
 
 #endif /* SERVER_INTERNAL_H */

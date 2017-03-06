@@ -12,6 +12,7 @@
 #include "server_internal.h"
 #include "util.h"
 
+
 int join_network(server_t* server, const char* ip, const char* port) {
     int res;
 
