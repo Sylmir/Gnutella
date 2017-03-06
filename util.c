@@ -2,8 +2,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include <arpa/inet.h>
 #include <poll.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include "util.h"
@@ -92,4 +95,62 @@ int poll_fd(struct pollfd* poller, int fd, int events, int timeout) {
     poller->revents = 0;
 
     return poll(poller, 1, timeout);
+}
+
+
+void free_not_null(const void* ptr) {
+    if (ptr != NULL) {
+        const_free(ptr);
+    }
+}
+
+
+int check_port(const char* port) {
+    char* end_ptr;
+    long long_port = strtol(port, &end_ptr, 10);
+
+    if (*end_ptr != '\0') {
+        return 0;
+    }
+
+    return long_port > 1024 && long_port < 65536;
+}
+
+
+int check_ip(const char* ip) {
+    struct sockaddr_in v4;
+    int res = inet_pton(AF_INET, ip, &v4);
+    if (res == 1) {
+        return 1;
+    }
+
+    struct sockaddr_in6 v6;
+    res = inet_pton(AF_INET6, ip, &v6);
+    if (res == 1) {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+void set_string(char** target, const char* content) {
+    *target = malloc(strlen(content));
+    strcpy(*target, content);
+}
+
+
+void free_reset(void** ptr) {
+    if (*ptr != NULL) {
+        free(*ptr);
+        *ptr = NULL;
+    }
+}
+
+
+void const_free_reset(const void **ptr) {
+    if (*ptr != NULL) {
+        const_free(*ptr);
+        *ptr = NULL;
+    }
 }

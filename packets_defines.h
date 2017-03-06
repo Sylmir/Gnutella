@@ -44,6 +44,8 @@ typedef uint8_t opcode_t;
 
 /* Client contact server to notify it's ready. */
 #define CMSG_INT_HANDSHAKE CMSGI(0)
+/* Client contact server to announce it is closing. */
+#define CMSG_INT_EXIT CMSGI(1)
 
 
 /* Server contact client to notify it's ready. */

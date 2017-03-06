@@ -44,6 +44,26 @@ ERROR_CODES_USUAL static int handshake(const client_t* client);
 #define SERVER_UP_CHECK_TIMEOUT_MS SERVER_UP_CHECK_TIMEOUT * IN_MILLISECONDS
 
 
+/*
+ * Main client loop.
+ */
+static int loop(client_t* client);
+
+
+/*
+ * Notify the server that we are exiting and subsequently close the socket to
+ * communicate with the server. After a call to this function, the client is
+ * ready to exit and should usually wait for the server to shut down.
+ */
+static void clear_client(client_t* client);
+
+
+/*
+ * Write the exit packet and send it to the local server.
+ */
+static void write_exit_packet(client_t* client);
+
+
 int run_client(const char* connection_port) {
     client_t client;
 
@@ -61,8 +81,9 @@ int run_client(const char* connection_port) {
     }
 
     applog(LOG_LEVEL_INFO, "[Client] Serveur OK (Handshake).\n");
+    loop(&client);
 
-    close(client.server_socket);
+    clear_client(&client);
 
     return EXIT_SUCCESS;
 }
@@ -80,4 +101,22 @@ int handshake(const client_t* client) {
     }
 
     return 0;
+}
+
+
+int loop(client_t* client) {
+    return 0;
+}
+
+
+void clear_client(client_t* client) {
+    write_exit_packet(client);
+    close(client->server_socket);
+    client->server_socket = -1;
+}
+
+
+void write_exit_packet(client_t* client) {
+    opcode_t opcode = CMSG_INT_EXIT;
+    write_to_fd(client->server_socket, &opcode, PKT_ID_SIZE);
 }

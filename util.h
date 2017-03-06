@@ -77,4 +77,36 @@ void const_free(const void* ptr);
 int poll_fd(struct pollfd* poller, int fd, int events, int timeout);
 
 
+/*
+ * Free a pointer if it is not null.
+ */
+void free_not_null(const void* ptr);
+
+
+/*
+ * Check if a port is valid.
+ */
+int check_port(const char* port);
+
+
+/*
+ * Check if an IP is valid.
+ */
+int check_ip(const char* ip);
+
+
+/*
+ * Allocate a block of at least strlen(content) bytes of memory and set *dest
+ * to point to the first byte of that block. Then, fills this block with content.
+ *
+ * Why isn't such a thing inside the C library ?
+ */
+void set_string(char** dest, const char* content);
+
+
+void free_reset(void** ptr);
+
+
+void const_free_reset(const void** ptr);
+
 #endif /* UTIL_H */

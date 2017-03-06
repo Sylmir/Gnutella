@@ -14,50 +14,92 @@
 #include "common.h"
 #include "log.h"
 #include "server.h"
+#include "util.h"
 
 
 /* The minimum number of values we must find in argv. */
 #define ARGV_MINIMUM_LENGTH 1
 
 
-/* Number of arguments when we want to be super peer. */
-#define ARGV_SU_LENGTH 3
-/* Index of the expected "-s" argument of main. */
-#define ARGV_SU_INDEX 1
-/* Index of the expected port number. */
-#define ARGV_SU_PORT_INDEX 2
-/* Command to run as first machine. */
-#define SU_VALUE "-s"
+/*******************************************************************************
+ * Boot argv.
+ */
 
 
-/* Number of argments when we want to contact someone specific. */
-#define ARGV_CONTACT_POINT_LENGTH 4
-/* Index of the expected "-c" argument of main. */
-#define ARGV_CONTACT_INDEX 1
-/* Index of the expected IP argument of main. */
-#define ARGV_IP_INDEX 2
-/* Index of the expected port argument of main. */
-#define ARGV_PORT_INDEX 3
-/* Command to send an IP:port to get the first neighbours. */
-#define CONTACT_VALUE "-c"
+/* Parameter to show help. */
+#define HELP_SHORT "-h"
+#define HELP_LONG "--help"
+
+
+/*******************************************************************************
+ * Client argv.
+ */
+
+
+typedef struct client_argv_s {
+    char* contact_port;
+
+    char* error;
+} client_argv_t;
+
+/*
+ * See LISTEN_SHORT and LISTEN_LONG, as they also define the port we contact to
+ * dialogue with the servent.
+ */
+
+
+/*******************************************************************************
+ * Server argv.
+ */
+
+
+typedef struct server_argv_s {
+    int first_machine;
+    char* contact_ip;
+    char* contact_port;
+    char* listen_port;
+
+    char* error;
+} server_argv_t;
+
+/* Parameter to run as first machine. */
+#define FIRST_MACHINE_SHORT "-f"
+#define FIRST_MACHINE_LONG "--first"
+
+
+/* Command to set an IP:port to get the first neighbours. */
+#define CONTACT_POINT_SHORT "-c"
+#define CONTACT_POINT_LONG "--contact"
+
+
+/* Command to set our listening port. */
+#define LISTEN_SHORT "-l"
+#define LISTEN_LONG "--listen"
+
 
 /* Print the correct way to call the application on the standard output. */
 static void usage();
 
 
-/* Ensure IP and port are correct. */
-static int ensure_ip_port(const char* ip, const char* port);
+/*
+ * Handle argv according to phase (boot, client, server). context will store the
+ * informations retrieved.
+ */
+static void handle_argv(int argc, char** argv, int phase, void* context);
+
+#define PHASE_BOOT 0
+#define PHASE_CLIENT 1
+#define PHASE_SERVER 2
 
 
-/* Ensure port is correct. */
-static int ensure_port(const char* port);
+static void handle_argv_boot(int argc, char** argv, void* context);
+static void handle_argv_client(int argc, char** argv, void* context);
+static void handle_argv_server(int argc, char** argv, void* context);
 
 
-/* Display msg on the error output, kill the client and exit. */
-static void server_error(const char* msg);
+static void clear_client_argv(client_argv_t* argv);
+static void clear_server_argv(server_argv_t* argv);
 
-
-static const char* extract_listening_port(int argc, const char** argv);
 
 /******************************************************************************/
 
@@ -81,46 +123,53 @@ int main(int argc, char** argv) {
         return EXIT_NOT_ENOUGH_ARGUMENTS;
     }
 
+    handle_argv(argc, argv, PHASE_BOOT, NULL);
+
     pid_t server_pid = fork();
     if (server_pid < 0) {
         applog(LOG_LEVEL_FATAL, "Erreur lors du fork pour créer le serveur. "
                                 "Extinction.\n");
         return EXIT_CLIENT_NO_FORK;
     } else if (server_pid == 0) {
-        int first_node = 0;
-        const char* ip = NULL;
-        const char* port = NULL;
-        const char* listening_port = NULL;
+        server_argv_t infos;
+        infos.first_machine = 0;
+        infos.contact_ip = infos.contact_port = infos.listen_port = infos.error = NULL;
 
-        if (argc > 1) {
-            if (strcmp(argv[ARGV_SU_INDEX], SU_VALUE) == 0) {
-                first_node = 1;
-                listening_port = extract_listening_port(argc, (const char**)argv);
-                if (listening_port == NULL) {
-                    printf("Port invalide, default utilisé.\n");
-                }
-            } else if (strcmp(argv[ARGV_CONTACT_INDEX], CONTACT_VALUE) == 0) {
-                if (argc == ARGV_CONTACT_POINT_LENGTH) {
-                    if (ensure_ip_port(argv[ARGV_IP_INDEX], argv[ARGV_PORT_INDEX]) == 1) {
-                        ip = argv[ARGV_IP_INDEX];
-                        port = argv[ARGV_PORT_INDEX];
-                        applog(LOG_LEVEL_INFO, "[Server] Contact : %s:%s.\n",
-                                               ip, port);
-                    } else {
-                        server_error("IP ou port invalide.\n");
-                    }
-                }
-            }
+        handle_argv(argc, argv, PHASE_SERVER, &infos);
+
+        if (infos.error != NULL) {
+            fprintf(stderr, infos.error);
+            usage();
+            kill(getppid(), SIGINT); /* Kill client. */
+            exit(EXIT_FAILURE);
         }
 
-        return run_server(first_node, listening_port, ip, port);
+        int res = run_server(infos.first_machine, infos.listen_port,
+                             infos.contact_ip, infos.contact_port);
+
+        clear_server_argv(&infos);
+
+        return res;
     } else {
-        int res = run_client(extract_listening_port(argc, (const char**)argv));
+        client_argv_t infos;
+        infos.contact_port = infos.error = NULL;
+
+        handle_argv(argc, argv, PHASE_CLIENT, &infos);
+
+        if (infos.error != NULL) {
+            fprintf(stderr, infos.error);
+            usage();
+            kill(server_pid, SIGINT); /* Kill server. */
+            exit(EXIT_FAILURE);
+        }
+
+        int res = run_client(infos.contact_port);
         if (res == -1) {
             kill(server_pid, SIGINT);
             return EXIT_FAILURE;
         }
 
+        clear_client_argv(&infos);
         int status;
         waitpid(server_pid, &status, 0);
         return res;
@@ -129,75 +178,144 @@ int main(int argc, char** argv) {
 
 
 void usage() {
-    printf("Usage: \n"
-           "\t./%s [%s port | ip port]\n", EXEC_NAME, SU_VALUE);
-    printf("\tIf %s is specified, the forwarding agument represent the port on "
-           "which the server will listen. it then identifies itself as the first "
-           "machine in the network (and won't seach for neighbours) and will be "
-           "used as contact point.\n", SU_VALUE);
-    printf("\tIf ip and port are specified (both arguments must be) the server "
-           "will contact ip:port to get it's first neighbours.\n");
-    printf("If no arguments are specified, the server will look in the hosts "
-           "files provided with the applicaion to try to find contact points.\n");
+    printf("Usage:\n");
+    printf("./%s [%s | %s] [%s || %s] [%s port || %s port] [%s ip port || %s ip port]\n",
+           EXEC_NAME, HELP_SHORT, HELP_LONG, FIRST_MACHINE_SHORT, FIRST_MACHINE_LONG,
+           LISTEN_SHORT, LISTEN_LONG, CONTACT_POINT_SHORT, CONTACT_POINT_LONG);
+    printf("\t%s / %s Display the present help and exit.\n", HELP_SHORT, HELP_LONG);
+    printf("\t%s / %s Run this application as first machine. It means the servent "
+           "won't search for neighbours.\n", FIRST_MACHINE_SHORT, FIRST_MACHINE_LONG);
+    printf("\t%s / %s port Force the servent to listen on the given port.\n",
+           LISTEN_SHORT, LISTEN_LONG);
+    printf("\t%s / %s ip port Force the servent to contact this given IP and port "
+           "to join the network.\n", CONTACT_POINT_SHORT, CONTACT_POINT_LONG);
 }
 
 
-int ensure_ip_port(const char* ip, const char* port) {
-    if (ensure_port(port) == 0) {
-        return 0;
+void handle_argv(int argc, char **argv, int phase, void *context) {
+    switch (phase) {
+    case PHASE_BOOT:
+        handle_argv_boot(argc, argv, context);
+        break;
+
+    case PHASE_CLIENT:
+        handle_argv_client(argc, argv, context);
+        break;
+
+    case PHASE_SERVER:
+        handle_argv_server(argc, argv, context);
+        break;
+
+    default:
+        break;
     }
-
-    struct sockaddr_in v4;
-    struct sockaddr_in6 v6;
-
-    int res = inet_pton(AF_INET, ip, &v4);
-    if (res == 1) {
-        return 1;
-    }
-
-    res = inet_pton(AF_INET6, ip, &v6);
-    if (res == 1) {
-        return 1;
-    }
-
-    return 0;
 }
 
 
-int ensure_port(const char* port) {
-    char* tmp;
-    long l_port = strtol(port, &tmp, 10);
-    if (*tmp != '\0') {
-        return 0;
-    }
+void handle_argv_boot(int argc, char** argv, void* context) {
+    for (int i = 0; i < argc; ) {
+        int increment = 1;
+        const char* value = argv[i];
 
-    if (l_port < 1025 || l_port > 65535) {
-        return 0;
-    }
+        if (strcmp(value, HELP_LONG) == 0 ||
+            strcmp(value, HELP_SHORT) == 0) {
+            usage();
+            exit(EXIT_SUCCESS);
+        }
 
-    return 1;
+        i += increment;
+    }
 }
 
 
-void server_error(const char* msg) {
-    if (msg != NULL) {
-        fprintf(stderr, msg);
-    }
+void handle_argv_client(int argc, char** argv, void* context) {
+    client_argv_t* infos = (client_argv_t*)context;
+    for (int i = 0; i < argc; ) {
+        int increment = 1;
+        const char* value = argv[i];
 
-    usage();
-    kill(getppid(), SIGINT);
-    exit(EXIT_FAILURE);
+        if (strcmp(value, LISTEN_LONG) == 0 ||
+            strcmp(value, LISTEN_SHORT) == 0) {
+            if (argc < i + 1) {
+                set_string(&infos->error, "Not enough parameters for internal contact port.\n");
+                return;
+            }
+
+            if (check_port(argv[i + 1]) == 0) {
+                set_string(&infos->error, "Invalid internal contact port.\n");
+                return;
+            }
+            set_string(&infos->contact_port, argv[i + 1]);
+
+            increment = 2;
+        }
+
+        i += increment;
+    }
 }
 
 
-const char* extract_listening_port(int argc, const char** argv) {
-    if (argc != ARGV_SU_LENGTH) {
-        return NULL;
-    }
+void handle_argv_server(int argc, char** argv, void* context) {
+    server_argv_t* infos = (server_argv_t*)context;
+    for (int i = 0; i < argc; ) {
+        int increment = 1;
+        const char* value = argv[i];
 
-    if (ensure_port(argv[ARGV_SU_PORT_INDEX]) == 0) {
-        return NULL;
-    }
+        if (strcmp(value, FIRST_MACHINE_LONG) == 0 ||
+            strcmp(value, FIRST_MACHINE_SHORT) == 0) {
+            infos->first_machine = 1;
+        } else if (strcmp(value, CONTACT_POINT_LONG) == 0 ||
+                   strcmp(value, CONTACT_POINT_SHORT) == 0) {
+            if (argc < i + 2) {
+                set_string(&infos->error, "Not enough parameters for contact point.\n");
+                return;
+            }
 
-    return argv[ARGV_SU_PORT_INDEX];
+            if (check_ip(argv[i + 1]) == 0) {
+                set_string(&infos->error, "Invalid contact IP.\n");
+                return;
+            }
+
+            if (check_port(argv[i + 2]) == 0) {
+                set_string(&infos->error, "Invalid contact port.\n");
+                return;
+            }
+
+            set_string(&infos->contact_ip, argv[i + 1]);
+            set_string(&infos->contact_port, argv[i + 2]);
+
+            increment = 3;
+        } else if (strcmp(value, LISTEN_LONG) == 0 ||
+                   strcmp(value, LISTEN_SHORT) == 0) {
+            if (argc < i + 1) {
+                set_string(&infos->error, "Not enough parameters for listening port.\n");
+                return;
+            }
+
+            if (check_port(argv[i + 1]) == 0) {
+                set_string(&infos->error, "Invalid listening port.\n");
+                return;
+            }
+
+            set_string(&infos->listen_port, argv[i + 1]);
+
+            increment = 2;
+        }
+
+        i += increment;
+    }
+}
+
+
+void clear_client_argv(client_argv_t* argv) {
+    free_not_null(argv->contact_port);
+    free_not_null(argv->error);
+}
+
+
+void clear_server_argv(server_argv_t* argv) {
+    free_not_null(argv->contact_ip);
+    free_not_null(argv->contact_port);
+    free_not_null(argv->error);
+    free_not_null(argv->listen_port);
 }
