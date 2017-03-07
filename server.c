@@ -134,7 +134,10 @@ int run_server(int first_machine, const char *listen_port,
     server_t server;
     server.client_socket    = 0;
     server.listening_socket = 0;
-    memset(server.neighbours, -1, MAX_NEIGHBOURS * sizeof(int));
+    for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
+        server.neighbours[i].sock = -1;
+        server.neighbours[i].port = 0;
+    }
     server.nb_neighbours    = 0;
     server.handshake        = 0;
 
@@ -155,7 +158,6 @@ int run_server(int first_machine, const char *listen_port,
 
     if (first_machine == 0) {
         int res = join_network(&server, ip, port);
-
 
         if (res == -1) {
             applog(LOG_LEVEL_FATAL, "[Serveur] Impossible d'acquérir des voisins. "
@@ -291,7 +293,7 @@ void handle_awaiting_sockets(server_t* server) {
             head = head->next;
         } else {
             close(*(int*)head->data);
-            list_pop_at(&prev, &head);
+            list_pop_at(server->awaiting_sockets, &prev, &head);
         }
     }
 }
@@ -309,10 +311,12 @@ int handle_awaiting_socket(server_t* server, int socket) {
 
     switch (opcode) {
     case CMSG_NEIGHBOURS:
+        applog(LOG_LEVEL_INFO, "[Server] Received CMSG_NEIGHBOURS\n");
         compute_and_send_neighbours(server, socket);
         break;
 
     case CMSG_JOIN:
+        applog(LOG_LEVEL_INFO, "[Server] Received CMSG_JOIN\n");
         answer_join_request(socket);
         break;
 
@@ -340,8 +344,10 @@ void clear_server(server_t* server) {
     close(server->client_socket);
 
     for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
-        close(server->neighbours[i]);
-        server->neighbours[i] = -1;
+        if (server->neighbours[i].sock != -1) {
+            close(server->neighbours[i].sock);
+        }
+        server->neighbours[i].sock = -1;
     }
 
     for (cell_t* head = server->awaiting_sockets->head; head != NULL; head = head->next) {

@@ -65,15 +65,21 @@ void list_pop(list_t* list, void* data, int once) {
 }
 
 
-void list_pop_at(cell_t **prev, cell_t** at) {
+void list_pop_at(list_t *list, cell_t **prev, cell_t** at) {
     if (*prev != NULL) {
         (*prev)->next = (*at)->next;
+    } else {
+        if ((*at)->next == NULL) {
+            list->head = NULL;
+        }
     }
 
     free((*at)->data);
     cell_t* copy_at = *at;
     *at = (*at)->next;
     free(copy_at);
+
+
 }
 
 

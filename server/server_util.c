@@ -6,44 +6,31 @@
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 
 #include "packets_defines.h"
 #include "server_internal.h"
 #include "util.h"
 
 
-void extract_neighbour_from_response(int socket, char** ip, char** port) {
-    ip_version_id_t version;
-    read_from_fd(socket, &version, IP_VERSION_ID_SIZE);
-
+void extract_neighbour_from_response(socket_t s, char** ip, char** port) {
     uint8_t ip_len;
-    read_from_fd(socket, &ip_len, sizeof(uint8_t));
+    read_from_fd(s, &ip_len, sizeof(uint8_t));
 
     *ip = malloc(ip_len);
-    read_from_fd(socket, *ip, ip_len);
+    read_from_fd(s, *ip, ip_len);
 
-    in_port_t iport;
-    read_from_fd(socket, &iport, sizeof(in_port_t));
+    uint8_t port_len;
+    read_from_fd(s, &port_len, sizeof(uint8_t));
 
-    *port = (char*)int_to_cstring(iport);
+    *port = malloc(port_len);
+    read_from_fd(s, *port, port_len);
 }
 
 
-void extract_neighbour_from_socket(int socket, char** ip, char** port) {
-    struct sockaddr addr;
-    socklen_t len = sizeof(addr);
-
-    getpeername(socket, &addr, &len);
-
-    in_port_t iport;
-    *ip = (char*)extract_ip_classic(&addr, &iport);
-    *port = (char*)int_to_cstring(iport);
-}
-
-
-void* add_new_socket(void* socket) {
+void* add_new_socket(void* s) {
     int* copy = malloc(sizeof(int));
-    *copy = *(int*)socket;
+    *copy = *(int*)s;
     return copy;
 }
 
@@ -95,17 +82,43 @@ const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port) {
 }
 
 
-void compute_and_send_neighbours(server_t* server, int socket) {
+void compute_and_send_neighbours(server_t* server, socket_t s) {
     uint8_t nb_neighbours = 0;
-    struct sockaddr* neighbours = malloc(MAX_NEIGHBOURS * sizeof(struct sockaddr));
+    char* ips[MAX_NEIGHBOURS] = { NULL };
+    char* ports[MAX_NEIGHBOURS] = { NULL };
 
     for (int i = 0; i < MAX_NEIGHBOURS; i++) {
-        if (server->neighbours[i] != -1) {
-            socklen_t len = sizeof(*(neighbours + nb_neighbours));
-            getpeername(server->neighbours[i], neighbours + nb_neighbours, &len);
+        if (server->neighbours[i].sock != -1) {
+            struct sockaddr addr;
+            socklen_t len = sizeof(addr);
+            getpeername(server->neighbours[i].sock, &addr, &len);
+            ips[nb_neighbours] = malloc(INET6_ADDRSTRLEN);
+
+            if (addr.sa_family == AF_INET) {
+                inet_ntop(addr.sa_family, &((struct sockaddr_in*)&addr)->sin_addr, ips[nb_neighbours], len);
+            } else {
+                inet_ntop(addr.sa_family, &((struct sockaddr_in6*)&addr)->sin6_addr, ips[nb_neighbours], len);
+            }
+            ports[nb_neighbours] = server->neighbours[i].port;
             nb_neighbours++;
         }
     }
 
-    send_neighbours_list(socket, neighbours, nb_neighbours);
+    send_neighbours_list(s, ips, ports, nb_neighbours);
+}
+
+
+void add_neighbour(server_t* server, socket_t s, const char *contact_port) {
+    if (server->nb_neighbours == MAX_NEIGHBOURS) {
+        return;
+    }
+
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        if (server->neighbours[i].sock == -1) {
+            server->neighbours[i].sock = s;
+            set_string(&(server->neighbours[i].port), contact_port);
+            ++server->nb_neighbours;
+            return;
+        }
+    }
 }

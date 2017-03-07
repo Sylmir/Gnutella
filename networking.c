@@ -29,7 +29,7 @@ int connect_to(const char* ip, const char* port, int* sock) {
 
     int res = getaddrinfo(ip, port, &hints, &result);
     if (res != 0) {
-        applog(LOG_LEVEL_ERROR, "[Client] Erreur lors de la recherche sur %s:%s."
+        applog(LOG_LEVEL_ERROR, "[Network] Erreur lors de la recherche sur %s:%s."
                                 " Erreur : %s.\n", gai_strerror(res));
         return CONNECT_ERROR_NO_ADDRINFO;
     }
@@ -42,7 +42,7 @@ int connect_to(const char* ip, const char* port, int* sock) {
                           NI_NUMERICHOST | NI_NUMERICSERV);
 
         if (res != 0) {
-            applog(LOG_LEVEL_ERROR, "[Client] Erreur lors de la récupération "
+            applog(LOG_LEVEL_ERROR, "[Network] Erreur lors de la récupération "
                                     "des informations. Erreur : %s.\n",
                                     gai_strerror(res));
             return CONNECT_ERROR_NO_NAMEINFO;
@@ -51,7 +51,7 @@ int connect_to(const char* ip, const char* port, int* sock) {
         int attempted_socket = socket(addr_info->ai_family, addr_info->ai_socktype,
                                       addr_info->ai_protocol);
         if (attempted_socket == -1) {
-            applog(LOG_LEVEL_ERROR, "[Client] Erreur lors de la création de la "
+            applog(LOG_LEVEL_ERROR, "[Network] Erreur lors de la création de la "
                                     "socket. Erreur : %s.\n", strerror(errno));
             continue;
         }
@@ -61,10 +61,10 @@ int connect_to(const char* ip, const char* port, int* sock) {
         if (res == 0) {
             has_valid_socket = 1;
             *sock = attempted_socket;
-            applog(LOG_LEVEL_INFO, "[Client] Connexion en attente sur le serveur "
+            applog(LOG_LEVEL_INFO, "[Network] Connexion en attente sur le serveur "
                                    "%s:%s.\n", host_name, numeric_port);
         } else {
-            applog(LOG_LEVEL_ERROR, "[Client] Echec de la connexion. Erreur: %s."
+            applog(LOG_LEVEL_ERROR, "[Network] Echec de la connexion. Erreur: %s."
                                     "\n", strerror(errno));
             close(attempted_socket);
             addr_info = addr_info->ai_next;
@@ -74,7 +74,7 @@ int connect_to(const char* ip, const char* port, int* sock) {
     freeaddrinfo(result);
 
     if (has_valid_socket == 0) {
-        applog(LOG_LEVEL_ERROR, "[Client] Impossible de se connecter au serveur "
+        applog(LOG_LEVEL_ERROR, "[Network] Impossible de se connecter au serveur "
                                 "%s:%s.\n", ip, port);
         return CONNECT_ERROR_NO_SOCKET;
     }
@@ -86,11 +86,11 @@ int connect_to(const char* ip, const char* port, int* sock) {
 int attempt_connect_to(const char* ip, const char* port,
                        int* sock, int nb_attempt, int sleep_time) {
     for (int i = 0; i < nb_attempt; i++) {
-        applog(LOG_LEVEL_INFO, "[Client] Tentative de connexion...\n");
+        applog(LOG_LEVEL_INFO, "[Network] Tentative de connexion...\n");
         int res = connect_to(ip, port, sock);
         if (res != CONNECT_OK) {
             sleep(sleep_time);
-            applog(LOG_LEVEL_ERROR, "[Client] Échec de la connexion.\n");
+            applog(LOG_LEVEL_ERROR, "[Network] Échec de la connexion.\n");
         } else {
             return 0;
         }

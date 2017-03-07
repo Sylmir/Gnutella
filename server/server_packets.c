@@ -9,20 +9,41 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "log.h"
 #include "networking.h"
 #include "packets_defines.h"
 #include "server_internal.h"
 #include "util.h"
 
-void answer_join_request(int socket) {
+#define JOIN_CHANCE 80
+#define JOIN_CHANCE_MOD 100
 
+void answer_join_request(socket_t s) {
+    uint8_t answer;
+    if (rand() % JOIN_CHANCE_MOD < JOIN_CHANCE) {
+        answer = 1;
+    } else {
+        answer = 0;
+    }
+
+    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t));
+    char* ptr = data;
+
+    *(opcode_t*)ptr = SMSG_JOIN;
+    ptr += PKT_ID_SIZE;
+
+    *(uint8_t*)ptr = answer;
+    ptr += sizeof(uint8_t);
+
+    write_to_fd(s, data, (intptr_t)ptr - (intptr_t)answer);
 }
 
 
 int send_neighbours_request(const char* ip, const char* port) {
+    applog(LOG_LEVEL_INFO, "send_neighbours_request: %s:%s\n", ip, port);
     int socket = -1;
     int res = connect_to(ip, port, &socket);
-    if (res == -1) {
+    if (res != CONNECT_OK) {
         return -1;
     }
 
@@ -33,17 +54,20 @@ int send_neighbours_request(const char* ip, const char* port) {
 }
 
 
-int send_join_request(const char* ip, const char* port, uint8_t rescue) {
+int send_join_request(server_t* server, const char* ip,
+                      const char* port, uint8_t rescue) {
     int socket = -1;
     int res = connect_to(ip, port, &socket);
-    if (res == -1) {
+    if (res != 0) {
         return -1;
     }
 
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t));
     char* ptr = data;
+
     *(opcode_t*)ptr = CMSG_JOIN;
     ptr += PKT_ID_SIZE;
+
     *(uint8_t*)ptr = rescue;
     ptr += sizeof(uint8_t);
 
@@ -53,10 +77,10 @@ int send_join_request(const char* ip, const char* port, uint8_t rescue) {
 }
 
 
-void send_neighbours_list(int socket, struct sockaddr *neighbours,
+void send_neighbours_list(socket_t s, char **ips, char **ports,
                           uint8_t nb_neighbours) {
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
-                        nb_neighbours * (IP_VERSION_ID_SIZE + INET6_ADDRSTRLEN + sizeof(in_port_t)) + sizeof(uint8_t));
+                        nb_neighbours * (INET6_ADDRSTRLEN + 5 + 2 * sizeof(uint8_t)));
     char* ptr = (char*)data;
     *(opcode_t*)ptr = SMSG_NEIGHBOURS;
     ptr += PKT_ID_SIZE;
@@ -65,15 +89,7 @@ void send_neighbours_list(int socket, struct sockaddr *neighbours,
     ptr += sizeof(uint8_t);
 
     for (int i = 0; i < nb_neighbours; i++) {
-        if ((neighbours + i)->sa_family == AF_INET) {
-            *(ip_version_id_t*)ptr = 4;
-        } else if ((neighbours + i)->sa_family == AF_INET6) {
-            *(ip_version_id_t*)ptr = 6;
-        }
-        ptr += IP_VERSION_ID_SIZE;
-
-        in_port_t port;
-        const char* ip = extract_ip_classic(neighbours + i, &port);
+        const char* ip = ips[i];
 
         *(uint8_t*)ptr = strlen(ip);
         ptr += sizeof(uint8_t);
@@ -81,14 +97,18 @@ void send_neighbours_list(int socket, struct sockaddr *neighbours,
         memcpy(ptr, ip, strlen(ip));
         ptr += strlen(ip);
 
-        *(in_port_t*)ptr = port;
-        ptr += sizeof(in_port_t);
+        const char* port = ports[i];
+        *(uint8_t*)ptr = strlen(port);
+        ptr += sizeof(uint8_t);
+
+        memcpy(ptr, port, strlen(port));
+        ptr += strlen(port);
     }
 
     ptrdiff_t length = (ptrdiff_t)ptr - (ptrdiff_t)data;
     assert(length >= 0);
 
-    write_to_fd(socket, data, (size_t)length);
+    write_to_fd(s, data, (size_t)length);
 
     free(data);
 }

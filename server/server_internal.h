@@ -11,12 +11,24 @@ struct sockaddr;
 struct sockaddr_storage;
 typedef uint16_t in_port_t;
 
+
+typedef int socket_t;
+
+
+typedef struct socket_contact_s {
+    socket_t sock;
+    /* Port to connect to the machine where the other extremity of the socket
+     * is present. */
+    char* port;
+} socket_contact_t;
+
+
 /* The structure to represent the server. */
 typedef struct server_s {
     /* Socket to wait for new connexions. */
     int listening_socket;
     /* Array of sockets representing the neighbours. */
-    int neighbours[MAX_NEIGHBOURS];
+    socket_contact_t neighbours[MAX_NEIGHBOURS];
     /* Our current number of neighbours. */
     int nb_neighbours;
     /* Socket to communicate with the client. */
@@ -59,13 +71,7 @@ int join_network_through(server_t* server, const char* ip, const char* port);
  * Extract the next neighbour from socket (assuming we are handling SMSG_NEIGHBOURS_REPLY).
  * The IP and port are stored inside ip and port.
  */
-void extract_neighbour_from_response(int socket, char **ip, char **port);
-
-
-/*
- * Extract the IP and port bound to socket and store them inside ip and port.
- */
-void extract_neighbour_from_socket(int socket, char** ip, char** port);
+void extract_neighbour_from_response(socket_t s, char **ip, char **port);
 
 
 /*
@@ -74,13 +80,36 @@ void extract_neighbour_from_socket(int socket, char** ip, char** port);
  * end of the function (no, I'm not going to make a version where the free
  * is not called, just malloc your damn buffers).
  */
-void join(const char* ip, const char* port, list_t* sockets);
+void join(server_t* server, const char* ip, const char* port, list_t* sockets);
+
+
+/*
+ * For each socket in targets, handle the SMSG_JOIN.
+ */
+void handle_join_responses(server_t* server, list_t* targets);
+
+
+/*
+ * Read SMSG_JOIN. Basically, this function just indicates if the servent
+ * accepted or refused the request, it won't add the the socket inside our
+ * neighbours.
+ *
+ * Return 0 if the servent refused the request, return 1 if the servent accepted
+ * the request.
+ */
+int handle_join_response(socket_t s);
 
 
 /*
  * Compute a list of neighbours to send through socket.
  */
-void compute_and_send_neighbours(server_t* server, int socket);
+void compute_and_send_neighbours(server_t* server, socket_t s);
+
+
+/*
+ * Add the socket if we can handle more neighbours.
+ */
+void add_neighbour(server_t* server, socket_t s, const char* contact_port);
 
 
 /*******************************************************************************
@@ -105,20 +134,20 @@ int send_neighbours_request(const char* ip, const char* port);
  * the socket used to communicate. Otherwise, we return -1. rescue indicates if
  * the rescue flag is to be set to 1 or 0.
  */
-int send_join_request(const char* ip, const char* port, uint8_t rescue);
+int send_join_request(server_t *server, const char* ip, const char* port, uint8_t rescue);
 
 
 /*
  * Answer to a join request through the socket.
  */
-void answer_join_request(int socket);
+void answer_join_request(socket_t s);
 
 
 
 /*
  * Send the neighbours to the client on the "other side" of socket.
  */
-void send_neighbours_list(int socket, struct sockaddr* neighbours,
+void send_neighbours_list(socket_t s, char** ips, char** ports,
                           uint8_t nb_neighbours);
 
 
@@ -130,7 +159,7 @@ void send_neighbours_list(int socket, struct sockaddr* neighbours,
 /*
  * Add a copy-in-heap of socket inside a list (creating function).
  */
-LIST_CREATE_FN void* add_new_socket(void* socket);
+LIST_CREATE_FN void* add_new_socket(void* s);
 
 
 /*

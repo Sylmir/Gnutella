@@ -21,13 +21,13 @@ typedef __socklen_t socklen_t;
 int connect_to(const char* ip, const char* port, int* sock);
 
 /* Everything OK. */
-#define CONNECT_OK                  0
+#define CONNECT_OK                  -1
 /* getaddrinfo failed. */
-#define CONNECT_ERROR_NO_ADDRINFO   1
+#define CONNECT_ERROR_NO_ADDRINFO   -2
 /* getnameinfo failed. */
-#define CONNECT_ERROR_NO_NAMEINFO   2
+#define CONNECT_ERROR_NO_NAMEINFO   -3
 /* No valid socket was found. */
-#define CONNECT_ERROR_NO_SOCKET     3
+#define CONNECT_ERROR_NO_SOCKET     -4
 
 
 /*
