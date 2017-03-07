@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
         handle_argv(argc, argv, PHASE_SERVER, &infos);
 
         if (infos.error != NULL) {
-            fprintf(stderr, infos.error);
+            fprintf(stderr, "%s", infos.error);
             usage();
             kill(getppid(), SIGINT); /* Kill client. */
             exit(EXIT_FAILURE);
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
         handle_argv(argc, argv, PHASE_CLIENT, &infos);
 
         if (infos.error != NULL) {
-            fprintf(stderr, infos.error);
+            fprintf(stderr, "%s", infos.error);
             usage();
             kill(server_pid, SIGINT); /* Kill server. */
             exit(EXIT_FAILURE);
