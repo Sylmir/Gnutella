@@ -112,6 +112,14 @@ void compute_and_send_neighbours(server_t* server, socket_t s);
 void add_neighbour(server_t* server, socket_t s, const char* contact_port);
 
 
+/*
+ * Handle CMSG_JOIN, i.e determine if we are going to accept this request, and
+ * if we accept (assuming we can) we extract the contact port of the other
+ * machine.
+ */
+void handle_join_request(server_t* server, socket_t sock);
+
+
 /*******************************************************************************
  * Packets handling.
  */
@@ -138,9 +146,10 @@ int send_join_request(server_t *server, const char* ip, const char* port, uint8_
 
 
 /*
- * Answer to a join request through the socket.
+ * Answer to a join request through the socket. join indicate if we accepted
+ * the request.
  */
-void answer_join_request(socket_t s);
+void answer_join_request(server_t *server, socket_t s, uint8_t join);
 
 
 

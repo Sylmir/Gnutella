@@ -52,15 +52,4 @@ typedef uint8_t opcode_t;
 #define SMSG_INT_HANDSHAKE SMSGI(0)
 
 
-/* Size of the IP protocol version identifier in bytes. */
-typedef uint8_t ip_version_id_t;
-#define IP_VERSION_ID_SIZE sizeof(ip_version_id_t)
-
-
-typedef enum smsg_join_reply_e {
-    JOIN_NO     = 0,
-    JOIN_YES    = 1,
-} smsg_join_reply_t;
-
-
 #endif /* PACKET_DEFINES_H */

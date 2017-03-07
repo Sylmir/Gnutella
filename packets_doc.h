@@ -72,11 +72,12 @@
  *  - Each neighbours is subsequently transmitted by sending both the IP adress
  * and the port used to contact it. For each neighbour transmitted, we format
  * like that:
- *      - 1 byte to indicate which version of the IP protocol the IP refers to.
- *      - 1 byte to store the length of the IP adress (string representation),
- * therefore refered to as ip_len.
- *      - ip_len bytes to store the IP adress in string representation.
- *      - 2 bytes to represent the port to contact.
+ *      - 1 byte to store the length of the IP adress (doted-string format),
+ * thereafter referred to as "ip_length".
+ *      - ip_length bytes to store the doted-string representation of the IP.
+ *      - 1 byte to store the length of the port (string format), thereafter
+ * referred to as "port_length".
+ *      - port_length bytes to store the port (string format).
  */
 
 
@@ -89,7 +90,10 @@
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
  *  - 1 byte indicating the "rescue" flag. When this flag is set to 1, the server
- * cannot refuse the connection.
+ * cannot refuse the connection (unless saturated).
+ *  - 1 byte indicating the length of the port (string format) used to contact
+ * this servent, thereafter referred to as "port_length".
+ *  - port_length bytes to store the port.
  *
  * Exepcted answer : SMSG_JOIN.
  */
@@ -105,7 +109,13 @@
  *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
  * itself.
  *  - 1 byte to store the answer. Note that this byte cannot be set to 0 if the
- * corresponding CMSG_JOIN has the rescue flag enabled.
+ * corresponding CMSG_JOIN has the rescue flag enabled (unless saturated).
+ *
+ *  From this point, we continue writing in the packet only if we answer is
+ * POSITIVE.
+ *      - 1 byte to store the length of the port to contact us (string), thereafter
+ * referred to as "port_length".
+ *      - port_length bytes to store the port.
  */
 
 

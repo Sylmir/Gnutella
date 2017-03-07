@@ -154,3 +154,26 @@ void const_free_reset(const void **ptr) {
         *ptr = NULL;
     }
 }
+
+
+void extract_port_from_socket(int socket, char* target) {
+    struct sockaddr addr;
+    socklen_t addr_len = sizeof(addr);
+
+    getpeername(socket, &addr, &addr_len);
+
+    if (addr.sa_family == AF_INET) {
+        struct sockaddr_in* v4 = (struct sockaddr_in*)&addr;
+        int_to_string(v4->sin_port, target);
+    } else if (addr.sa_family == AF_INET6) {
+        struct sockaddr_in6* v6 = (struct sockaddr_in6*)&addr;
+        int_to_string(v6->sin6_port, target);
+    }
+}
+
+
+char* extract_port_from_socket_s(int socket) {
+    char* target = malloc(6);
+    extract_port_from_socket(socket, target);
+    return target;
+}

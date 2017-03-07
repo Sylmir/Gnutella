@@ -18,9 +18,9 @@
 #include "util.h"
 
 int main() {
-
-    const int a = 12;
-    *(int*)&a = 13;
+    char t = 'a';
+    char toto[5] = "Hello";
+    printf("%s, %d, %c\n", toto, toto[5], t);
 
     return EXIT_SUCCESS;
 }

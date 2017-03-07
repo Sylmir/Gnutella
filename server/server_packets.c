@@ -15,30 +15,36 @@
 #include "server_internal.h"
 #include "util.h"
 
-#define JOIN_CHANCE 80
-#define JOIN_CHANCE_MOD 100
 
-void answer_join_request(socket_t s) {
-    uint8_t answer;
-    if (rand() % JOIN_CHANCE_MOD < JOIN_CHANCE) {
-        answer = 1;
-    } else {
-        answer = 0;
-    }
-
-    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t));
+// SMSG_JOIN (S -> C)
+void answer_join_request(server_t* server, socket_t s, uint8_t join) {
+    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + 5);
     char* ptr = data;
 
     *(opcode_t*)ptr = SMSG_JOIN;
     ptr += PKT_ID_SIZE;
 
-    *(uint8_t*)ptr = answer;
+    *(uint8_t*)ptr = join;
     ptr += sizeof(uint8_t);
 
-    write_to_fd(s, data, (intptr_t)ptr - (intptr_t)answer);
+    if (join == 1) {
+        char listening_port[6];
+        extract_port_from_socket(server->listening_socket, listening_port);
+
+        *(uint8_t*)ptr = strlen(listening_port);
+        ptr += sizeof(uint8_t);
+
+        memcpy(ptr, listening_port, strlen(listening_port));
+        ptr += strlen(listening_port);
+    }
+
+    write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
+
+    free(data);
 }
 
 
+// CMSG_NEIGHBOURS (C -> S)
 int send_neighbours_request(const char* ip, const char* port) {
     applog(LOG_LEVEL_INFO, "send_neighbours_request: %s:%s\n", ip, port);
     int socket = -1;
@@ -54,6 +60,7 @@ int send_neighbours_request(const char* ip, const char* port) {
 }
 
 
+// CMSG_JOIN (C -> S)
 int send_join_request(server_t* server, const char* ip,
                       const char* port, uint8_t rescue) {
     int socket = -1;
@@ -62,7 +69,7 @@ int send_join_request(server_t* server, const char* ip,
         return -1;
     }
 
-    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t));
+    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + 5);
     char* ptr = data;
 
     *(opcode_t*)ptr = CMSG_JOIN;
@@ -71,12 +78,24 @@ int send_join_request(server_t* server, const char* ip,
     *(uint8_t*)ptr = rescue;
     ptr += sizeof(uint8_t);
 
+    char listening_port[6];
+    extract_port_from_socket(server->listening_socket, listening_port);
+
+    *(uint8_t*)ptr = strlen(listening_port);
+    ptr += sizeof(uint8_t);
+
+    memcpy(ptr, listening_port, strlen(listening_port));
+    ptr += sizeof(strlen(listening_port));
+
     write_to_fd(socket, data, (intptr_t)ptr - (intptr_t)data);
+
+    free(data);
 
     return socket;
 }
 
 
+// SMSG_NEIGHBOURS (S -> C)
 void send_neighbours_list(socket_t s, char **ips, char **ports,
                           uint8_t nb_neighbours) {
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
@@ -105,10 +124,7 @@ void send_neighbours_list(socket_t s, char **ips, char **ports,
         ptr += strlen(port);
     }
 
-    ptrdiff_t length = (ptrdiff_t)ptr - (ptrdiff_t)data;
-    assert(length >= 0);
-
-    write_to_fd(s, data, (size_t)length);
+    write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
 
     free(data);
 }

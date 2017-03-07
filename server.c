@@ -317,7 +317,7 @@ int handle_awaiting_socket(server_t* server, int socket) {
 
     case CMSG_JOIN:
         applog(LOG_LEVEL_INFO, "[Server] Received CMSG_JOIN\n");
-        answer_join_request(socket);
+        handle_join_request(server, socket);
         break;
 
 

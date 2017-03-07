@@ -109,4 +109,25 @@ void free_reset(void** ptr);
 
 void const_free_reset(const void** ptr);
 
+
+/*
+ * Extract the port the socket is bound to and store it as a string inside
+ * target. If target is not long enough, the behaviour is undefined. All content
+ * in target is overwritten.
+ *
+ * The function will also add a trailing '\0'. Ideally, the length of target
+ * should be at least 6 (5 for the port, 1 for the '\0').
+ */
+void extract_port_from_socket(int socket, char* target);
+
+
+/*
+ * Extract the port the socket is bound to and return it as a mallocated string.
+ * This function guarantees that the returned buffer will be long enough to
+ * hold any port.
+ *
+ * It also adds the trailing '\0'. How convenient.
+ */
+char* extract_port_from_socket_s(int socket);
+
 #endif /* UTIL_H */

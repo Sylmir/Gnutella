@@ -72,8 +72,7 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
     close(socket);
 
     if (nb_neighbours < MAX_NEIGHBOURS) {
-        /* extract_neighbour_from_socket(socket, &current_ip, &current_port);
-        applog(LOG_LEVEL_INFO, "join_network: contact %s:%s\n", current_ip, current_port); */
+        applog(LOG_LEVEL_INFO, "join_network: contact %s:%s\n", ip, port);
         join(server, ip, port, awaiting);
     }
 
@@ -105,8 +104,17 @@ void handle_join_responses(server_t* server, list_t* targets) {
     for (cell_t* head = targets->head; head != NULL; head = head->next) {
         int res = handle_join_response(*(socket_t*)head->data);
         if (res == 1) {
-            char* port = NULL;
+            /* Continue handling of SMSG_JOIN. */
+            uint8_t port_length;
+            read_from_fd(*(socket_t*)head->data, &port_length, sizeof(uint8_t));
+
+            char* port = malloc(port_length + 1);
+            read_from_fd(*(socket_t*)head->data, port, port_length);
+            port[port_length] = '\0';
+
             add_neighbour(server, *(socket_t*)head->data, port);
+
+            free(port);
         } else {
             close(*(socket_t*)head->data);
         }
@@ -114,6 +122,7 @@ void handle_join_responses(server_t* server, list_t* targets) {
 }
 
 
+// Handle SMSG_JOIN (Client)
 int handle_join_response(socket_t s) {
     opcode_t opcode;
     read_from_fd(s, &opcode, PKT_ID_SIZE);
@@ -124,4 +133,45 @@ int handle_join_response(socket_t s) {
     read_from_fd(s, &answer, sizeof(uint8_t));
 
     return answer;
+}
+
+
+#define JOIN_CHANCE 80
+#define JOIN_CHANCE_MOD 100
+
+
+// Handle CMSG_JOIN (Server)
+void handle_join_request(server_t* server, socket_t sock) {
+    uint8_t rescue;
+    read_from_fd(sock, &rescue, sizeof(uint8_t));
+
+    uint8_t port_length;
+    read_from_fd(sock, &port_length, sizeof(uint8_t));
+
+    char* port = malloc(port_length + 1);
+    read_from_fd(sock, port, port_length);
+    port[port_length] = '\0';
+
+    uint8_t answer = 0;
+
+    if (server->nb_neighbours == MAX_NEIGHBOURS) {
+        answer = 0;
+    } else {
+        if (rescue == 1) {
+            answer = 1;
+        } else {
+            if (rand() % JOIN_CHANCE_MOD < JOIN_CHANCE) {
+                answer = 1;
+            } else {
+                answer = 0;
+            }
+        }
+    }
+
+    answer_join_request(server, sock, answer);
+
+    if (answer == 1) {
+        add_neighbour(server, sock, port);
+        free(port);
+    }
 }

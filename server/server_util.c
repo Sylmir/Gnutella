@@ -13,18 +13,21 @@
 #include "util.h"
 
 
+// Handle SMSG_NEIGHBOURS (Client)
 void extract_neighbour_from_response(socket_t s, char** ip, char** port) {
     uint8_t ip_len;
     read_from_fd(s, &ip_len, sizeof(uint8_t));
 
-    *ip = malloc(ip_len);
+    *ip = malloc(ip_len + 1);
     read_from_fd(s, *ip, ip_len);
+    (*ip)[ip_len] = '\0';
 
     uint8_t port_len;
     read_from_fd(s, &port_len, sizeof(uint8_t));
 
-    *port = malloc(port_len);
+    *port = malloc(port_len + 1);
     read_from_fd(s, *port, port_len);
+    (*port)[port_len] = '\0';
 }
 
 
@@ -82,6 +85,7 @@ const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port) {
 }
 
 
+// Build data for SMSG_NEIGHBOURS (Server)
 void compute_and_send_neighbours(server_t* server, socket_t s) {
     uint8_t nb_neighbours = 0;
     char* ips[MAX_NEIGHBOURS] = { NULL };
