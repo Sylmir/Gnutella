@@ -116,8 +116,11 @@ void add_neighbour(server_t* server, socket_t s, const char* contact_port);
  * Handle CMSG_JOIN, i.e determine if we are going to accept this request, and
  * if we accept (assuming we can) we extract the contact port of the other
  * machine.
+ *
+ * The function return 0 or 1 to indicate if refused the request or not (so we
+ * can remove the socket from the awaiting queue without closing it).
  */
-void handle_join_request(server_t* server, socket_t sock);
+int handle_join_request(server_t* server, socket_t sock);
 
 
 /*******************************************************************************

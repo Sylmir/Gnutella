@@ -96,7 +96,7 @@ void compute_and_send_neighbours(server_t* server, socket_t s) {
             struct sockaddr addr;
             socklen_t len = sizeof(addr);
             getpeername(server->neighbours[i].sock, &addr, &len);
-            ips[nb_neighbours] = malloc(INET6_ADDRSTRLEN);
+            ips[nb_neighbours] = malloc(INET6_ADDRSTRLEN + 1);
 
             if (addr.sa_family == AF_INET) {
                 inet_ntop(addr.sa_family, &((struct sockaddr_in*)&addr)->sin_addr, ips[nb_neighbours], len);
@@ -109,6 +109,10 @@ void compute_and_send_neighbours(server_t* server, socket_t s) {
     }
 
     send_neighbours_list(s, ips, ports, nb_neighbours);
+
+    for (int i = 0; i < nb_neighbours; ++i) {
+        free(ips[i]);
+    }
 }
 
 

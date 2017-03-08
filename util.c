@@ -156,24 +156,85 @@ void const_free_reset(const void **ptr) {
 }
 
 
-void extract_port_from_socket(int socket, char* target) {
-    struct sockaddr addr;
+void extract_port_from_socket(int socket, char* target, int remote) {
+    struct sockaddr_storage addr;
     socklen_t addr_len = sizeof(addr);
 
-    getpeername(socket, &addr, &addr_len);
+    if (remote == 1) {
+        getpeername(socket, (struct sockaddr*)&addr, &addr_len);
+    } else {
+        getsockname(socket, (struct sockaddr*)&addr, &addr_len);
+    }
 
-    if (addr.sa_family == AF_INET) {
+    if (addr.ss_family == AF_INET) {
         struct sockaddr_in* v4 = (struct sockaddr_in*)&addr;
-        int_to_string(v4->sin_port, target);
-    } else if (addr.sa_family == AF_INET6) {
+        int_to_string(ntohs(v4->sin_port), target);
+    } else if (addr.ss_family == AF_INET6) {
         struct sockaddr_in6* v6 = (struct sockaddr_in6*)&addr;
-        int_to_string(v6->sin6_port, target);
+        int_to_string(ntohs(v6->sin6_port), target);
     }
 }
 
 
-char* extract_port_from_socket_s(int socket) {
+char* extract_port_from_socket_s(int socket, int remote) {
     char* target = malloc(6);
-    extract_port_from_socket(socket, target);
+    extract_port_from_socket(socket, target, remote);
     return target;
+}
+
+
+void extract_ip_from_socket(int socket, char* target, int remote) {
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+
+    if (remote == 1) {
+        getpeername(socket, (struct sockaddr*)&addr, &addr_len);
+    } else {
+        getsockname(socket, (struct sockaddr*)&addr, &addr_len);
+    }
+
+    if (addr.ss_family == AF_INET) {
+        struct sockaddr_in* v4 = (struct sockaddr_in*)&addr;
+        inet_ntop(addr.ss_family, &(v4->sin_addr), target, INET_ADDRSTRLEN);
+    } else if (addr.ss_family == AF_INET6) {
+        struct sockaddr_in6* v6 = (struct sockaddr_in6*)&addr;
+        inet_ntop(addr.ss_family, &(v6->sin6_addr), target, INET6_ADDRSTRLEN);
+    }
+}
+
+
+char* extract_ip_from_socket_s(int socket, int remote) {
+    char* target = malloc(INET6_ADDRSTRLEN);
+    extract_ip_from_socket(socket, target, remote);
+    return target;
+}
+
+
+void extract_ip_port_from_socket(int socket, char* ip, char* port, int remote) {
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+
+    if (remote == 1) {
+        getpeername(socket, (struct sockaddr*)&addr, &addr_len);
+    } else {
+        getsockname(socket, (struct sockaddr*)&addr, &addr_len);
+    }
+
+    if (addr.ss_family == AF_INET) {
+        struct sockaddr_in* v4 = (struct sockaddr_in*)&addr;
+        int_to_string(ntohs(v4->sin_port), port);
+        inet_ntop(addr.ss_family, &(v4->sin_addr), ip, INET_ADDRSTRLEN);
+    } else if (addr.ss_family == AF_INET6) {
+        struct sockaddr_in6* v6 = (struct sockaddr_in6*)&addr;
+        int_to_string(ntohs(v6->sin6_port), port);
+        inet_ntop(addr.ss_family, &(v6->sin6_addr), ip, INET6_ADDRSTRLEN);
+    }
+}
+
+
+
+void extract_ip_port_from_socket_s(int socket, char** ip, char** port, int remote) {
+    *ip = malloc(INET6_ADDRSTRLEN);
+    *port = malloc(6);
+    extract_ip_port_from_socket(socket, *ip, *port, remote);
 }

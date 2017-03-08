@@ -4,7 +4,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <arpa/inet.h>
 #include <poll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "common.h"
@@ -54,12 +57,16 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
         return -1;
     }
 
+    applog(LOG_LEVEL_INFO, "[Client] Received SMSG_NEIGHBOURS\n");
+
 
     /* Store the sockets we send CMSG_JOIN_REQUEST through. */
     list_t* awaiting = list_create(compare_ints, add_new_socket);
 
     uint8_t nb_neighbours;
     read_from_fd(socket, &nb_neighbours, sizeof(uint8_t));
+
+    applog(LOG_LEVEL_INFO, "join_network: received %d neighbours\n", nb_neighbours);
 
 
     char *current_ip, *current_port;
@@ -91,7 +98,7 @@ void join(server_t* server, const char* ip, const char* port, list_t* sockets) {
         return;
     }
 
-    applog(LOG_LEVEL_INFO, "join: success %d\n", res);
+    applog(LOG_LEVEL_INFO, "join: success\n");
 
     list_push_back(sockets, &res);
 
@@ -129,6 +136,8 @@ int handle_join_response(socket_t s) {
 
     assert(opcode == SMSG_JOIN);
 
+    applog(LOG_LEVEL_INFO, "[Client] Received SMSG_JOIN\n");
+
     uint8_t answer;
     read_from_fd(s, &answer, sizeof(uint8_t));
 
@@ -136,12 +145,12 @@ int handle_join_response(socket_t s) {
 }
 
 
-#define JOIN_CHANCE 80
+#define JOIN_CHANCE 100
 #define JOIN_CHANCE_MOD 100
 
 
 // Handle CMSG_JOIN (Server)
-void handle_join_request(server_t* server, socket_t sock) {
+int handle_join_request(server_t* server, socket_t sock) {
     uint8_t rescue;
     read_from_fd(sock, &rescue, sizeof(uint8_t));
 
@@ -174,4 +183,6 @@ void handle_join_request(server_t* server, socket_t sock) {
         add_neighbour(server, sock, port);
         free(port);
     }
+
+    return answer;
 }

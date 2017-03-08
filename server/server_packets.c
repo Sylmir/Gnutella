@@ -28,8 +28,9 @@ void answer_join_request(server_t* server, socket_t s, uint8_t join) {
     ptr += sizeof(uint8_t);
 
     if (join == 1) {
+        // Trailing '\0' not included
         char listening_port[6];
-        extract_port_from_socket(server->listening_socket, listening_port);
+        extract_port_from_socket(server->listening_socket, listening_port, 0);
 
         *(uint8_t*)ptr = strlen(listening_port);
         ptr += sizeof(uint8_t);
@@ -39,6 +40,8 @@ void answer_join_request(server_t* server, socket_t s, uint8_t join) {
     }
 
     write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
+
+    applog(LOG_LEVEL_INFO, "[Serveur] Sent SMSG_JOIN\n");
 
     free(data);
 }
@@ -56,6 +59,8 @@ int send_neighbours_request(const char* ip, const char* port) {
     opcode_t opcode = CMSG_NEIGHBOURS;
     write_to_fd(socket, &opcode, PKT_ID_SIZE);
 
+    applog(LOG_LEVEL_INFO, "[Client] Sent CMSG_NEIGHBOURS\n");
+
     return socket;
 }
 
@@ -65,7 +70,7 @@ int send_join_request(server_t* server, const char* ip,
                       const char* port, uint8_t rescue) {
     int socket = -1;
     int res = connect_to(ip, port, &socket);
-    if (res != 0) {
+    if (res != CONNECT_OK) {
         return -1;
     }
 
@@ -79,15 +84,20 @@ int send_join_request(server_t* server, const char* ip,
     ptr += sizeof(uint8_t);
 
     char listening_port[6];
-    extract_port_from_socket(server->listening_socket, listening_port);
+    extract_port_from_socket(server->listening_socket, listening_port, 0);
+
+    applog(LOG_LEVEL_INFO, "[Client] Extracted port : %s\n", listening_port);
 
     *(uint8_t*)ptr = strlen(listening_port);
     ptr += sizeof(uint8_t);
 
+    // Trailing '\0' not written
     memcpy(ptr, listening_port, strlen(listening_port));
     ptr += sizeof(strlen(listening_port));
 
     write_to_fd(socket, data, (intptr_t)ptr - (intptr_t)data);
+
+    applog(LOG_LEVEL_INFO, "[Client] Sent CMSG_JOIN\n");
 
     free(data);
 
@@ -107,6 +117,7 @@ void send_neighbours_list(socket_t s, char **ips, char **ports,
     *(uint8_t*)ptr = nb_neighbours;
     ptr += sizeof(uint8_t);
 
+    // Trailing '\0' not written
     for (int i = 0; i < nb_neighbours; i++) {
         const char* ip = ips[i];
 
@@ -125,6 +136,8 @@ void send_neighbours_list(socket_t s, char **ips, char **ports,
     }
 
     write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
+
+    applog(LOG_LEVEL_INFO, "[Serveur] Sent SMSG_NEIGHBOURS\n");
 
     free(data);
 }

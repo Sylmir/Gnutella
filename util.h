@@ -118,7 +118,7 @@ void const_free_reset(const void** ptr);
  * The function will also add a trailing '\0'. Ideally, the length of target
  * should be at least 6 (5 for the port, 1 for the '\0').
  */
-void extract_port_from_socket(int socket, char* target);
+void extract_port_from_socket(int socket, char* target, int remote);
 
 
 /*
@@ -128,6 +128,50 @@ void extract_port_from_socket(int socket, char* target);
  *
  * It also adds the trailing '\0'. How convenient.
  */
-char* extract_port_from_socket_s(int socket);
+char* extract_port_from_socket_s(int socket, int remote);
+
+
+/*
+ * Extract the IP from a socket and store it as a string inside target. Is target
+ * it not long enough, the behaviour is undefined. All content in target is
+ * overwritten.
+ *
+ * The function will also add a trailing '\0'. Ideally, the length of target
+ * should be at least INET6_ADDRSTRLEN to handle both IPv4 and IPv6 (and to
+ * put the '\0').
+ */
+void extract_ip_from_socket(int socket, char* target, int remote);
+
+
+/*
+ * Extract the IP from a socket and return it as a mallocated string. The function
+ * guarantees that the returned buffer will be long enough to hold both IPv4 and
+ * IPv6 adress.
+ *
+ * It also adds the trailing '\0'. Man this is useful. Too bad we don't have C++11
+ * std::unique_ptr to remove that annoying free from our minds...
+ */
+char* extract_ip_from_socket_s(int socket, int remote);
+
+
+/*
+ * Extract both IP and port from a socket and store them as strings inside
+ * (respectively) ip and port. These buffer must satisfy the criteria from both
+ * extract_ip_from_socket and extract_port_from_socket to ensure the behaviour
+ * is defined.
+ *
+ * All guarantees from the aforementionned functions are kept.
+ */
+void extract_ip_port_from_socket(int socket, char* ip, char* port, int remote);
+
+
+/*
+ * Extract both IP and port from a socket and store them as strings inside
+ * the (in-function) mallocated buffers *ip and *port. This function has the
+ * same level of guarantees and the same requirements as the extract_*_s
+ * functions above.
+ */
+void extract_ip_port_from_socket_s(int socket, char** ip, char** port, int remote);
+
 
 #endif /* UTIL_H */

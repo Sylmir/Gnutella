@@ -84,9 +84,18 @@ static void handle_awaiting_sockets(server_t* server);
 
 /*
  * Check if the socket has something for us and answer the request if necessary.
- * If there is nothing to read, the function returns 0, otherwise it returns 1.
+ * If there is nothing to read, the function returns 0, otherwise it return one
+ * of AWAIT_-family values to indicate if we must close the socket and remove it
+ * from the awaiting list, or only remove it from the list.
  */
 static int handle_awaiting_socket(server_t* server, int socket);
+
+/* Do nothing. */
+#define AWAIT_EMPTY 0
+/* Close and remove. */
+#define AWAIT_CLOSE 1
+/* Don't close and remove. */
+#define AWAIT_KEEP 2
 
 
 /*
@@ -156,6 +165,12 @@ int run_server(int first_machine, const char *listen_port,
 
     server.listening_socket = listening_socket;
 
+    struct sockaddr_storage addr;
+    socklen_t len = sizeof(addr);
+    getsockname(server.listening_socket, (struct sockaddr*)&addr, &len);
+
+    printf("%d\n", ntohs(((struct sockaddr_in*)&addr)->sin_port));
+
     if (first_machine == 0) {
         int res = join_network(&server, ip, port);
 
@@ -177,6 +192,7 @@ int run_server(int first_machine, const char *listen_port,
 
 
 int loop(server_t* server) {
+    int print = 0;
     while (_loop == 1) {
         struct sockaddr client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
@@ -185,8 +201,17 @@ int loop(server_t* server) {
 
         handle_accept_result(server, res, &client_addr, client_addr_len);
         handle_awaiting_sockets(server);
-        handle_neighbours(server);
+        if (print == 0) {
+            handle_neighbours(server);
+        } else {
+            print++;
+            if (print >= 1000000) {
+                print = 0;
+            }
+        }
         handle_client(server);
+
+        sleep(1);
     }
 
     return 0;
@@ -288,11 +313,14 @@ void handle_awaiting_sockets(server_t* server) {
     cell_t* prev = NULL;
     for (cell_t* head = server->awaiting_sockets->head; head != NULL; ) {
         int res = handle_awaiting_socket(server, *(int*)head->data);
-        if (res == 0) {
+        if (res == AWAIT_EMPTY) {
             prev = head;
             head = head->next;
         } else {
-            close(*(int*)head->data);
+            if (res == AWAIT_CLOSE) {
+                close(*(int*)head->data);
+            }
+
             list_pop_at(server->awaiting_sockets, &prev, &head);
         }
     }
@@ -303,7 +331,7 @@ int handle_awaiting_socket(server_t* server, int socket) {
     struct pollfd poller;
     int res = poll_fd(&poller, socket, POLLIN, AWAIT_TIMEOUT);
     if (res == 0) {
-        return 0;
+        return AWAIT_EMPTY;
     }
 
     opcode_t opcode;
@@ -317,7 +345,11 @@ int handle_awaiting_socket(server_t* server, int socket) {
 
     case CMSG_JOIN:
         applog(LOG_LEVEL_INFO, "[Server] Received CMSG_JOIN\n");
-        handle_join_request(server, socket);
+        if (handle_join_request(server, socket) == 0) {
+            return AWAIT_CLOSE;
+        } else {
+            return AWAIT_KEEP;
+        }
         break;
 
 
@@ -325,11 +357,21 @@ int handle_awaiting_socket(server_t* server, int socket) {
         break;
     }
 
-    return 1;
+    return AWAIT_CLOSE;
 }
 
 
 int handle_neighbours(server_t* server) {
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        if (server->neighbours[i].sock != -1) {
+            char ip[INET6_ADDRSTRLEN];
+            char port[6];
+            extract_ip_port_from_socket(server->neighbours[i].sock, ip, port, 1);
+
+            applog(LOG_LEVEL_INFO, "Neighbour: %s:%s, contact = %s\n",
+                   ip, port, server->neighbours[i].port);
+        }
+    }
     return 0;
 }
 
