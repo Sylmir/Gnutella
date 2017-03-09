@@ -22,9 +22,9 @@
 
 /*
  * Each packet begins with an identifier therefore refered to as "opcode",
- * that is PKT_ID_LENGTH long. Usually, PKT_ID_LENGTH is sizeof(uint8_t) or
+ * that is PKT_ID_SIZE long. Usually, PKT_ID_SIZE is sizeof(uint8_t) or
  * sizeof(uint16_t) depending on how many different packets we have. We therefore
- * require PKT_ID_LENGTH to be the size of an unsigned integral type large
+ * require PKT_ID_SIZE to be the size of an unsigned integral type large
  * enough to hold all the possible opcodes a user might want to have.
  *
  * Each packet opcode specifies it's own type. In bit form, the highest bit
@@ -37,7 +37,7 @@
  * subsequently binary-OR'ed with the appropriate mask to completely identify
  * the packet.
  *
- * This strategy results in us using PKT_ID_LENGTH * 8 - 2 bits to actually
+ * This strategy results in us using PKT_ID_SIZE * 8 - 2 bits to actually
  * identify a packet
  */
 
@@ -53,7 +53,7 @@
  * Description: a client asks for the neighbours of a server.
  *
  * Content :
- *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
+ *  - PKT_ID_SIZE bytes to represent the opcode, in which we write the opcode
  * itself.
  *
  * Expected answer : SMSG_NEIGHBOURS.
@@ -66,7 +66,7 @@
  * Description: a server answers the request of a client for it's neighbours.
  *
  * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
+ *  - PKT_ID_SIZE bytes to represent the opcode, in which we write the opcode
  * itself.
  *  - 1 byte to store the number of neighbours we are transmitting.
  *  - Each neighbours is subsequently transmitted by sending both the IP adress
@@ -87,7 +87,7 @@
  * Description: a client asks a server to become it's neighbour.
  *
  * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
+ *  - PKT_ID_SIZE bytes to represent the opcode, in which we write the opcode
  * itself.
  *  - 1 byte indicating the "rescue" flag. When this flag is set to 1, the server
  * cannot refuse the connection (unless saturated).
@@ -106,7 +106,7 @@
  * becoming a neighbour.
  *
  * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode, in which we write the opcode
+ *  - PKT_ID_SIZE bytes to represent the opcode, in which we write the opcode
  * itself.
  *  - 1 byte to store the answer. Note that this byte cannot be set to 0 if the
  * corresponding CMSG_JOIN has the rescue flag enabled (unless saturated).
@@ -128,7 +128,7 @@
  * close connection.
  *
  * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode.
+ *  - PKT_ID_SIZE bytes to represent the opcode.
  *
  * Expected answer : SMSG_NEIGHBOUR_RESCUE.
  */
@@ -141,10 +141,83 @@
  * own neighbours.
  *
  * Content:
- *  - PKT_ID_LENGTH bytes to represent the opcode.
+ *  - PKT_ID_SIZE bytes to represent the opcode.
  *  - 1 byte to indicate the version of the IP protocol.
  *  - 1 byte to indicate the length of the IP adress in string representation,
  * therefore refered to as ip_len.
  *  - ip_len bytes to store the IP adress in string representation.
  *  - 2 bytes to store the port used to contact the server.
+ */
+
+
+/*
+ * #define CMSG_INT_HANDSHAKE CMSGI(0)
+ *
+ * Description: local client handshakes with local server to ensure it is up.
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ *
+ * Expected answer: SMSG_INT_HANDSHAKE.
+ */
+
+
+/*
+ * #define SMSG_INT_HANDSHAKE SMSGI(0)
+ *
+ * Description: local server answers local client handshake to confirm it is up.
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ */
+
+
+/*
+ * #define CMSG_INT_EXIT CMSGI(1)
+ *
+ * Description: local client notifies local server it is exiting.
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ */
+
+
+/*
+ * #define CMSG_INT_SEARCH CMSGI(2)
+ *
+ * Description: local client notifies local server is is searching for a file.
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ *  - 1 byte to indicate the length of the filename, thereafter referred to as
+ * "file_name_length".
+ *  - file_name_length bytes to store the name of the file.
+ *
+ * Once the local server is done searching, it sends SMSG_INT_SEARCH to the
+ * local client.
+ */
+
+
+/*
+ * #define SMSG_INT_SEARCH SMSGI(1)
+ *
+ * Description: local server sends a list of machines that have a desired file.
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ *  - 1 byte to indicate the length of the filename, thereafter reerred to as
+ * "file_name_length".
+ *  - file_name_length bytes to store the name of the file.
+ *  - 1 byte to indicate the number of machines that have the file, thereafter
+ * referred to as "nb_machines"
+ *  - Now, we read the following elements for each machine :
+ *      - 1 byte to indicate the length of the IP in dotted-string format (ip_length)
+ *      - ip_length bytes to represent the IP in dotted-string format
+ *      - 1 byte to indicate the length of the port in string format (port_length)
+ *      - port_length bytes to represent the port in string format
+ */
+
+
+/*
+ * #define CMSG_INT_DOWNLOAD CMSGI(3)
  */

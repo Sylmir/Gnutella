@@ -46,10 +46,18 @@ typedef uint8_t opcode_t;
 #define CMSG_INT_HANDSHAKE CMSGI(0)
 /* Client contact server to announce it is closing. */
 #define CMSG_INT_EXIT CMSGI(1)
+/* Client contact server to ask for a file. */
+#define CMSG_INT_SEARCH CMSGI(2)
+/* Client contact server to download a file. */
+#define CMSG_INT_DOWNLOAD CMSGI(3)
 
 
 /* Server contact client to notify it's ready. */
 #define SMSG_INT_HANDSHAKE SMSGI(0)
+/* Server contact client to send list of machines that have a file. */
+#define SMSG_INT_SEARCH SMSGI(1)
+/* Server contact client to notify file has been downloaded. */
+#define SMSG_INT_DOWNLOAD SMSGI(2)
 
 
 #endif /* PACKET_DEFINES_H */

@@ -41,7 +41,7 @@ void answer_join_request(server_t* server, socket_t s, uint8_t join) {
 
     write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
 
-    applog(LOG_LEVEL_INFO, "[Serveur] Sent SMSG_JOIN\n");
+    applog(LOG_LEVEL_INFO, "[Server] Sent SMSG_JOIN\n");
 
     free(data);
 }
@@ -137,7 +137,7 @@ void send_neighbours_list(socket_t s, char **ips, char **ports,
 
     write_to_fd(s, data, (intptr_t)ptr - (intptr_t)data);
 
-    applog(LOG_LEVEL_INFO, "[Serveur] Sent SMSG_NEIGHBOURS\n");
+    applog(LOG_LEVEL_INFO, "[Server] Sent SMSG_NEIGHBOURS\n");
 
     free(data);
 }

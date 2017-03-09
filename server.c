@@ -107,9 +107,13 @@ static int handle_neighbours(server_t* server);
 
 
 /*
- * Check if the client has something to say, and handle the requests if any.
+ * Check if the client has something to say, and handle the requests if any. If
+ * the client sent CMSG_INT_EXIT, the function return 1 to indicate we must stop.
+ * Otherwise it return 0.
  */
 static int handle_client(server_t* server);
+
+#define HANDLE_CLIENT_TIMEOUT 1 * IN_MILLISECONDS
 
 
 /*
@@ -155,11 +159,11 @@ int run_server(int first_machine, const char *listen_port,
                                                    MAX_PENDING_REQUESTS,
                                                    host_name, port_number);
     if (listening_socket < 0) {
-        applog(LOG_LEVEL_FATAL, "[Serveur] Impossible de créer la socket "
+        applog(LOG_LEVEL_FATAL, "[Server] Impossible de créer la socket "
                                 "d'écoute. Extinction.\n");
         exit(EXIT_FAILURE);
     } else {
-        applog(LOG_LEVEL_INFO, "[Serveur] Listening on %s:%s.\n",
+        applog(LOG_LEVEL_INFO, "[Server] Listening on %s:%s.\n",
                                host_name, port_number);
     }
 
@@ -175,7 +179,7 @@ int run_server(int first_machine, const char *listen_port,
         int res = join_network(&server, ip, port);
 
         if (res == -1) {
-            applog(LOG_LEVEL_FATAL, "[Serveur] Impossible d'acquérir des voisins. "
+            applog(LOG_LEVEL_FATAL, "[Server] Impossible d'acquérir des voisins. "
                                     "Extinction.\n");
             close(server.listening_socket);
             exit(EXIT_FAILURE);
@@ -209,7 +213,10 @@ int loop(server_t* server) {
                 print = 0;
             }
         }
-        handle_client(server);
+
+        if (handle_client(server) == 1) {
+            _loop = 0;
+        }
 
         sleep(1);
     }
@@ -234,7 +241,7 @@ void handle_accept_result(server_t *server, int result,
     in_port_t port;
     const char* ip = extract_ip_classic(addr, &port);
     if (ip == NULL) {
-        applog(LOG_LEVEL_WARNING, "[Serveur] inet_ntop failed. Erreur : %s.\n",
+        applog(LOG_LEVEL_WARNING, "[Server] inet_ntop failed. Erreur : %s.\n",
                strerror(errno));
 
         if (errno == EAFNOSUPPORT) {
@@ -243,7 +250,7 @@ void handle_accept_result(server_t *server, int result,
         }
     } else {
         /* Check if we can handshake. */
-        applog(LOG_LEVEL_INFO, "[Serveur] Connexion acceptée depuis %s:%d.\n",
+        applog(LOG_LEVEL_INFO, "[Server] Connexion acceptée depuis %s:%d.\n",
                ip, port);
 
         if (strcmp(ip, "127.0.0.1") == 0 ||
@@ -291,11 +298,11 @@ int handshake(server_t* server, int client_socket) {
 void handle_handshake_result(server_t* server, int result) {
     switch (result) {
     case HANDSHAKE_OK:
-        applog(LOG_LEVEL_INFO, "[Serveur] Client OK (Handshake).\n");
+        applog(LOG_LEVEL_INFO, "[Server] Client OK (Handshake).\n");
         break;
 
     case HANDSHAKE_BAD_OPCODE:
-        applog(LOG_LEVEL_FATAL, "[Serveur] Mauvais opcode dans le handshake. "
+        applog(LOG_LEVEL_FATAL, "[Server] Mauvais opcode dans le handshake. "
                                "Arrêt.\n");
         clear_server(server);
         kill(getppid(), SIGINT);
@@ -303,7 +310,7 @@ void handle_handshake_result(server_t* server, int result) {
         break;
 
     case HANDSHAKE_ALREADY_SHAKED:
-        applog(LOG_LEVEL_WARNING, "[Serveur] Multiple handshake.\n");
+        applog(LOG_LEVEL_WARNING, "[Server] Multiple handshake.\n");
         break;
     }
 }
@@ -377,7 +384,24 @@ int handle_neighbours(server_t* server) {
 
 
 int handle_client(server_t* server) {
-    return 0;
+    struct pollfd poller;
+    int res = poll_fd(&poller, server->client_socket, POLLIN, HANDLE_CLIENT_TIMEOUT);
+
+    if (res == 0) {
+        return 0;
+    }
+
+    opcode_t opcode;
+    read_from_fd(server->client_socket, &opcode, PKT_ID_SIZE);
+
+    switch (opcode) {
+    case CMSG_INT_EXIT:
+        applog(LOG_LEVEL_INFO, "[Servent] Received CMSG_INT_EXIT\n");
+        return 1;
+
+    default:
+        return 0;
+    }
 }
 
 

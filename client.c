@@ -64,6 +64,48 @@ static void clear_client(client_t* client);
 static void write_exit_packet(client_t* client);
 
 
+/*
+ * Display the help on the standard output. This includes the different commands
+ * the user can type in and how to use them.
+ */
+static void display_help();
+
+
+/*
+ * Read a line on the standard input and return it as a mallocated string.
+ */
+static char* read_command();
+
+
+/*
+ * Handle the command passed as a parameter.
+ */
+static void handle_command(client_t* client, char* command);
+
+
+/*
+ * Handle the search of a file.
+ */
+static void handle_search(client_t* client, char* command);
+
+
+#define SEARCH_COMMAND "search"
+#define DOWNLOAD_COMMAND "download"
+#define HELP_COMMAND "help"
+#define EXIT_COMMAND "exit"
+static const char* commands[][2] = {
+    { HELP_COMMAND, "Affiche l'aide." },
+    { SEARCH_COMMAND " nom_de_fichier", "Demande la recherche du fichier <nom_de_fichier>." },
+    { DOWNLOAD_COMMAND " nom_de_fichier [ip port]", "Effectue le téléchargement du fichier <nom_de_fichier> depuis la machine d'IP <ip> sur le port <port>.\n"
+                                           "\tSi IP ou port n'est pas spécifié, une recherche est effectuée, puis une machine est sélectionnée au hasard parmis les candidates." },
+    { EXIT_COMMAND, "Quitte l'application." },
+    { NULL, NULL }
+};
+
+
+/******************************************************************************/
+
+
 int run_client(const char* connection_port) {
     client_t client;
 
@@ -71,7 +113,7 @@ int run_client(const char* connection_port) {
                                  &(client.server_socket), MAX_SERVER_UP_CHECK,
                                  SERVER_UP_CHECK_TIMEOUT);
     if (res == -1) {
-        applog(LOG_LEVEL_ERROR, "[Client] Serveur innaccessible. Extinction.\n");
+        applog(LOG_LEVEL_ERROR, "[User] Serveur innaccessible. Extinction.\n");
         return EXIT_FAILURE;
     }
 
@@ -80,7 +122,7 @@ int run_client(const char* connection_port) {
         return -1;
     }
 
-    applog(LOG_LEVEL_INFO, "[Client] Serveur OK (Handshake).\n");
+    applog(LOG_LEVEL_INFO, "[User] Serveur OK (Handshake).\n");
     loop(&client);
 
     clear_client(&client);
@@ -105,6 +147,25 @@ int handshake(const client_t* client) {
 
 
 int loop(client_t* client) {
+    int continue_loop = 1;
+    display_help();
+    while (continue_loop == 1) {
+        printf("@gnutella$ ");
+        char* temp = read_command();
+        char* command = malloc(strlen(temp) - 1);
+        strncpy(command, temp, strlen(temp) - 1);
+        command[strlen(temp) - 1] = '\0';
+        if (strcmp(command, "") == 0) {
+            printf("Commande vide\n");
+            continue;
+        } else if (strcmp(command, EXIT_COMMAND) == 0) {
+            continue_loop = 0;
+        }
+
+        handle_command(client, command);
+        free(temp);
+        free(command);
+    }
     return 0;
 }
 
@@ -119,4 +180,55 @@ void clear_client(client_t* client) {
 void write_exit_packet(client_t* client) {
     opcode_t opcode = CMSG_INT_EXIT;
     write_to_fd(client->server_socket, &opcode, PKT_ID_SIZE);
+
+    applog(LOG_LEVEL_INFO, "[User] Sent CMSG_INT_EXIT\n");
+}
+
+
+/******************************************************************************/
+
+
+void display_help() {
+    int i = 0;
+    while (commands[i][0] != NULL) {
+        printf("%s\n\t%s\n\n", commands[i][0], commands[i][1]);
+        i++;
+    }
+}
+
+
+char* read_command() {
+    char* command = NULL;
+    size_t length = 0;
+    getline(&command, &length, stdin);
+    return command;
+}
+
+
+void handle_command(client_t* client, char* command) {
+    if (strcmp(command, HELP_COMMAND) == 0) {
+        display_help();
+        return;
+    }
+
+    char* command_name = strtok(command, " ");
+    if (strcmp(command_name, DOWNLOAD_COMMAND) == 0) {
+        applog(LOG_LEVEL_INFO, "[User] Download\n");
+    } else if (strcmp(command_name, SEARCH_COMMAND) == 0) {
+        applog(LOG_LEVEL_INFO, "[User] Search");
+    }
+}
+
+
+void handle_search(client_t* client, char* command) {
+    char* name = strtok(command, " ");
+    if (name == NULL) {
+        log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. Tapez \"help\" pour vérifier la syntaxe.\n");
+        return;
+    }
+
+    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(name));
+    char* ptr = data;
+    *(opcode_t*)ptr = CMSG_INT_SEARCH;
+    ptr += PKT_ID_SIZE;
 }

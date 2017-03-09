@@ -95,8 +95,10 @@ int applog(int log_level, const char* format, ...) {
 
     va_list va;
     va_start(va, format);
+    FILE* log_file = get_log_file_by_level(log_level);
     log_internal(get_log_function_by_level(log_level), format,
-                 get_log_file_by_level(log_level), va);
+                 log_file, va);
+    fflush(log_file);
     va_end(va);
 
     return 0;
@@ -111,6 +113,7 @@ int log_to_file(int log_level, FILE* file, const char* format, ...) {
     va_list va;
     va_start(va, format);
     log_internal(get_log_function_by_level(log_level), format, file, va);
+    fflush(file);
     va_end(va);
 
     return 0;

@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -39,6 +40,11 @@
 
 typedef struct client_argv_s {
     char* contact_port;
+    char* stdout_redirect;
+    char* stderr_redirect;
+
+    int new_stdout;
+    int new_stderr;
 
     char* error;
 } client_argv_t;
@@ -60,6 +66,12 @@ typedef struct server_argv_s {
     char* contact_port;
     char* listen_port;
 
+    char* stdout_redirect;
+    char* stderr_redirect;
+
+    int new_stdout;
+    int new_stderr;
+
     char* error;
 } server_argv_t;
 
@@ -76,6 +88,13 @@ typedef struct server_argv_s {
 /* Command to set our listening port. */
 #define LISTEN_SHORT "-l"
 #define LISTEN_LONG "--listen"
+
+
+/* Commands to redirect the usual streams to custom files. */
+#define REDIRECT_CLIENT_STDOUT "-cout"
+#define REDIRECT_CLIENT_STDERR "-cerr"
+#define REDIRECT_SERVER_STDOUT "-sout"
+#define REDIRECT_SERVER_STDERR "-serr"
 
 
 /* Print the correct way to call the application on the standard output. */
@@ -135,8 +154,7 @@ int main(int argc, char** argv) {
         return EXIT_CLIENT_NO_FORK;
     } else if (server_pid == 0) {
         server_argv_t infos;
-        infos.first_machine = 0;
-        infos.contact_ip = infos.contact_port = infos.listen_port = infos.error = NULL;
+        memset(&infos, 0, sizeof(server_argv_t));
 
         handle_argv(argc, argv, PHASE_SERVER, &infos);
 
@@ -147,6 +165,18 @@ int main(int argc, char** argv) {
             exit(EXIT_FAILURE);
         }
 
+        if (infos.stderr_redirect != NULL) {
+            infos.new_stderr = open(infos.stderr_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0222);
+            dup2(infos.new_stderr, STDERR_FILENO);
+            close(infos.new_stderr);
+        }
+
+        if (infos.stdout_redirect != NULL) {
+            infos.new_stdout = open(infos.stdout_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0222);
+            dup2(infos.new_stdout, STDOUT_FILENO);
+            close(infos.new_stdout);
+        }
+
         int res = run_server(infos.first_machine, infos.listen_port,
                              infos.contact_ip, infos.contact_port);
 
@@ -155,7 +185,7 @@ int main(int argc, char** argv) {
         return res;
     } else {
         client_argv_t infos;
-        infos.contact_port = infos.error = NULL;
+        memset(&infos, 0, sizeof(client_argv_t));
 
         handle_argv(argc, argv, PHASE_CLIENT, &infos);
 
@@ -166,7 +196,18 @@ int main(int argc, char** argv) {
             exit(EXIT_FAILURE);
         }
 
-        printf("[Client] Port d'écoute : %s\n", infos.contact_port);
+        if (infos.stderr_redirect != NULL) {
+            infos.new_stderr = open(infos.stderr_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+            dup2(infos.new_stderr, STDERR_FILENO);
+            close(infos.new_stderr);
+        }
+
+        if (infos.stdout_redirect != NULL) {
+            infos.new_stdout = open(infos.stdout_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0666);
+            dup2(infos.new_stdout, STDOUT_FILENO);
+            close(infos.new_stdout);
+        }
+
         int res = run_client(infos.contact_port);
         if (res == -1) {
             kill(server_pid, SIGINT);
@@ -183,9 +224,10 @@ int main(int argc, char** argv) {
 
 void usage() {
     printf("Usage:\n");
-    printf("./%s [%s | %s] [%s || %s] [%s port || %s port] [%s ip port || %s ip port]\n",
+    printf("./%s [%s | %s] [%s || %s] [%s port || %s port] [%s ip port || %s ip port] [%s file] [%s file] [%s file] [%s file]\n",
            EXEC_NAME, HELP_SHORT, HELP_LONG, FIRST_MACHINE_SHORT, FIRST_MACHINE_LONG,
-           LISTEN_SHORT, LISTEN_LONG, CONTACT_POINT_SHORT, CONTACT_POINT_LONG);
+           LISTEN_SHORT, LISTEN_LONG, CONTACT_POINT_SHORT, CONTACT_POINT_LONG,
+           REDIRECT_CLIENT_STDOUT, REDIRECT_CLIENT_STDERR, REDIRECT_SERVER_STDOUT, REDIRECT_SERVER_STDERR);
     printf("\t%s / %s Display the present help and exit.\n", HELP_SHORT, HELP_LONG);
     printf("\t%s / %s Run this application as first machine. It means the servent "
            "won't search for neighbours.\n", FIRST_MACHINE_SHORT, FIRST_MACHINE_LONG);
@@ -193,6 +235,13 @@ void usage() {
            LISTEN_SHORT, LISTEN_LONG);
     printf("\t%s / %s ip port Force the servent to contact this given IP and port "
            "to join the network.\n", CONTACT_POINT_SHORT, CONTACT_POINT_LONG);
+    printf("\t[%s || %s || %s || %s] file will redirect the given stream to the "
+           "file passed as parameter.\n"
+           "\t\t%s redirects the standard output of the client\n"
+           "\t\t%s redirect the error output of the client\n"
+           "\t\tThe -s* variants redirect the outputs of the server.\n",
+           REDIRECT_CLIENT_STDOUT, REDIRECT_CLIENT_STDERR, REDIRECT_SERVER_STDOUT,
+           REDIRECT_SERVER_STDERR, REDIRECT_CLIENT_STDOUT, REDIRECT_CLIENT_STDERR);
 }
 
 
@@ -240,7 +289,7 @@ void handle_argv_client(int argc, char** argv, void* context) {
 
         if (strcmp(value, LISTEN_LONG) == 0 ||
             strcmp(value, LISTEN_SHORT) == 0) {
-            if (argc < i + 1) {
+            if (argc <= i + 1) {
                 set_string(&infos->error, "Not enough parameters for internal contact port.\n");
                 return;
             }
@@ -250,6 +299,24 @@ void handle_argv_client(int argc, char** argv, void* context) {
                 return;
             }
             set_string(&infos->contact_port, argv[i + 1]);
+
+            increment = 2;
+        } else if (strcmp(value, REDIRECT_CLIENT_STDOUT) == 0) {
+            if (argc <= i + 1) {
+                set_string(&infos->error, "Not enough arguments to redirect stdout (client).\n");
+                return;
+            }
+
+            set_string(&infos->stdout_redirect, argv[i + 1]);
+
+            increment = 2;
+        } else if (strcmp(value, REDIRECT_CLIENT_STDERR) == 0) {
+            if (argc <= i + 1) {
+                set_string(&infos->error, "Not enough arguments to redirect stderr (client).\n");
+                return;
+            }
+
+            set_string(&infos->stderr_redirect, argv[i + 1]);
 
             increment = 2;
         }
@@ -270,7 +337,7 @@ void handle_argv_server(int argc, char** argv, void* context) {
             infos->first_machine = 1;
         } else if (strcmp(value, CONTACT_POINT_LONG) == 0 ||
                    strcmp(value, CONTACT_POINT_SHORT) == 0) {
-            if (argc < i + 2) {
+            if (argc <= i + 2) {
                 set_string(&infos->error, "Not enough parameters for contact point.\n");
                 return;
             }
@@ -291,7 +358,7 @@ void handle_argv_server(int argc, char** argv, void* context) {
             increment = 3;
         } else if (strcmp(value, LISTEN_LONG) == 0 ||
                    strcmp(value, LISTEN_SHORT) == 0) {
-            if (argc < i + 1) {
+            if (argc <= i + 1) {
                 set_string(&infos->error, "Not enough parameters for listening port.\n");
                 return;
             }
@@ -304,6 +371,24 @@ void handle_argv_server(int argc, char** argv, void* context) {
             set_string(&infos->listen_port, argv[i + 1]);
 
             increment = 2;
+        } else if (strcmp(value, REDIRECT_SERVER_STDOUT) == 0) {
+            if (argc <= i +1) {
+                set_string(&infos->error, "Not enough arguments to redirect stdout (server).\n");
+                return;
+            }
+
+            set_string(&infos->stdout_redirect, argv[i + 1]);
+
+            increment = 2;
+        } else if (strcmp(value, REDIRECT_SERVER_STDERR) == 0) {
+            if (argc <= i + 1) {
+                set_string(&infos->error, "Not enough arguments to redirect stderr (server).\n");
+                return;
+            }
+
+            set_string(&infos->stderr_redirect, argv[i + 1]);
+
+            increment = 2;
         }
 
         i += increment;
@@ -313,6 +398,9 @@ void handle_argv_server(int argc, char** argv, void* context) {
 
 void clear_client_argv(client_argv_t* argv) {
     free_not_null(argv->contact_port);
+    free_not_null(argv->stdout_redirect);
+    free_not_null(argv->stderr_redirect);
+
     free_not_null(argv->error);
 }
 
@@ -320,6 +408,10 @@ void clear_client_argv(client_argv_t* argv) {
 void clear_server_argv(server_argv_t* argv) {
     free_not_null(argv->contact_ip);
     free_not_null(argv->contact_port);
-    free_not_null(argv->error);
     free_not_null(argv->listen_port);
+
+    free_not_null(argv->stdout_redirect);
+    free_not_null(argv->stderr_redirect);
+
+    free_not_null(argv->error);
 }
