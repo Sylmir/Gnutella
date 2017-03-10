@@ -166,13 +166,13 @@ int main(int argc, char** argv) {
         }
 
         if (infos.stderr_redirect != NULL) {
-            infos.new_stderr = open(infos.stderr_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0222);
+            infos.new_stderr = open(infos.stderr_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0666);
             dup2(infos.new_stderr, STDERR_FILENO);
             close(infos.new_stderr);
         }
 
         if (infos.stdout_redirect != NULL) {
-            infos.new_stdout = open(infos.stdout_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0222);
+            infos.new_stdout = open(infos.stdout_redirect, O_CREAT | O_TRUNC | O_WRONLY, 0666);
             dup2(infos.new_stdout, STDOUT_FILENO);
             close(infos.new_stdout);
         }

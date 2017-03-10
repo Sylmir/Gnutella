@@ -3,10 +3,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <arpa/inet.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "util.h"
@@ -237,4 +241,34 @@ void extract_ip_port_from_socket_s(int socket, char** ip, char** port, int remot
     *ip = malloc(INET6_ADDRSTRLEN);
     *port = malloc(6);
     extract_ip_port_from_socket(socket, *ip, *port, remote);
+}
+
+
+int elapsed_time_since(const struct timespec* begin) {
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+
+    long int sec_diff = now.tv_sec - begin->tv_sec;
+    long int nano_diff = now.tv_nsec - begin->tv_nsec;
+
+    /* If less than one second was elapsed. */
+    if (nano_diff < 0) {
+        --sec_diff;
+        nano_diff += 1000000000;
+    }
+
+    return sec_diff * 1000 + (nano_diff / 1000 / 1000);
+}
+
+
+void millisleep(int milliseconds) {
+    // printf("millisleep : %d\n", milliseconds);
+    struct timespec timer;
+    div_t res = div(milliseconds, 1000);
+    timer.tv_sec = res.quot;
+    timer.tv_nsec = res.rem * 1000 * 1000;
+
+    // printf("millisleep: s = %ld, n = %ld\n", timer.tv_sec, timer.tv_nsec);
+
+    nanosleep(&timer, NULL);
 }

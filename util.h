@@ -8,6 +8,7 @@
 
 
 struct pollfd;
+struct timespec;
 
 /*
  * Write the content of buffer up to size bytes in the file designed by fd.
@@ -172,6 +173,18 @@ void extract_ip_port_from_socket(int socket, char* ip, char* port, int remote);
  * functions above.
  */
 void extract_ip_port_from_socket_s(int socket, char** ip, char** port, int remote);
+
+
+/*
+ * Returned the elapsed time in milliseconds between now and begin.
+ */
+int elapsed_time_since(const struct timespec* begin);
+
+
+/*
+ * Sleep in milliseconds.
+ */
+void millisleep(int milliseconds);
 
 
 #endif /* UTIL_H */

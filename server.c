@@ -5,13 +5,15 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "common.h"
@@ -66,6 +68,12 @@ static void handle_handshake_result(server_t* server, int result);
  */
 static int loop(server_t* server);
 
+/*
+ * Minimum amount of time (in milliseconds) the server has to spend inside a loop.
+ * This allows us to relieve the work on the CPU.
+ */
+#define LOOP_MIN_DURATION 50
+
 
 /*
  * Close all sockets on the server. After a call to this function, the server
@@ -113,7 +121,7 @@ static int handle_neighbours(server_t* server);
  */
 static int handle_client(server_t* server);
 
-#define HANDLE_CLIENT_TIMEOUT 1 * IN_MILLISECONDS
+#define HANDLE_CLIENT_TIMEOUT 10
 
 
 /*
@@ -135,8 +143,19 @@ static void handle_new_socket(server_t* server, int new_socket);
  * exit. Finally, if accept() failed earlier, the function displays the content
  * of errno. In all other cases, the function does nothing.
  */
-static void handle_accept_result(server_t* server, int result,
-                                 const struct sockaddr* addr, socklen_t addr_len);
+static void handle_accept_result(server_t* server, int result);
+
+
+/*
+ * Loop over the pending requests and execute them.
+ */
+static void handle_pending_requests(server_t* server);
+
+
+/*
+ * Handle a pending request.
+ */
+static void handle_pending_request(server_t* server, request_t* request);
 
 
 /******************************************************************************/
@@ -179,7 +198,7 @@ int run_server(int first_machine, const char *listen_port,
         int res = join_network(&server, ip, port);
 
         if (res == -1) {
-            applog(LOG_LEVEL_FATAL, "[Server] Impossible d'acquérir des voisins. "
+            applog(LOG_LEVEL_FATAL, "[Client] Impossible d'acquérir des voisins. "
                                     "Extinction.\n");
             close(server.listening_socket);
             exit(EXIT_FAILURE);
@@ -196,37 +215,45 @@ int run_server(int first_machine, const char *listen_port,
 
 
 int loop(server_t* server) {
-    int print = 0;
+    int print_timer = 2 * IN_MILLISECONDS;
+    int time_diff = 0;
     while (_loop == 1) {
+        struct timespec begin;
+        clock_gettime(CLOCK_REALTIME, &begin);
+
         struct sockaddr client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
         int res = attempt_accept(server->listening_socket, ACCEPT_TIMEOUT,
                                  &client_addr, &client_addr_len);
 
-        handle_accept_result(server, res, &client_addr, client_addr_len);
+        handle_accept_result(server, res);
         handle_awaiting_sockets(server);
-        if (print == 0) {
+
+        if (print_timer <= time_diff) {
             handle_neighbours(server);
+            print_timer = 2000;
         } else {
-            print++;
-            if (print >= 1000000) {
-                print = 0;
-            }
+            print_timer -= time_diff;
         }
 
         if (handle_client(server) == 1) {
             _loop = 0;
         }
 
-        sleep(1);
+        handle_pending_requests(server);
+
+        time_diff = elapsed_time_since(&begin);
+        if (time_diff < LOOP_MIN_DURATION) {
+            millisleep(LOOP_MIN_DURATION - time_diff);
+            time_diff = LOOP_MIN_DURATION;
+        }
     }
 
     return 0;
 }
 
 
-void handle_accept_result(server_t *server, int result,
-                          const struct sockaddr* addr, socklen_t addr_len) {
+void handle_accept_result(server_t *server, int result) {
     if (result == ACCEPT_ERR_TIMEOUT) {
         return;
     }
@@ -238,19 +265,18 @@ void handle_accept_result(server_t *server, int result,
     }
 
     int socket = result;
-    in_port_t port;
-    const char* ip = extract_ip_classic(addr, &port);
+    char* ip = NULL, *port = NULL;
+    extract_ip_port_from_socket_s(socket, &ip, &port, 1);
     if (ip == NULL) {
         applog(LOG_LEVEL_WARNING, "[Server] inet_ntop failed. Erreur : %s.\n",
                strerror(errno));
 
         if (errno == EAFNOSUPPORT) {
             close(socket);
-            return;
         }
     } else {
         /* Check if we can handshake. */
-        applog(LOG_LEVEL_INFO, "[Server] Connexion acceptée depuis %s:%d.\n",
+        applog(LOG_LEVEL_INFO, "[Server] Connexion acceptée depuis %s:%s.\n",
                ip, port);
 
         if (strcmp(ip, "127.0.0.1") == 0 ||
@@ -261,9 +287,10 @@ void handle_accept_result(server_t *server, int result,
         } else {
             handle_new_socket(server, socket);
         }
-
-        free((void*)ip);
     }
+
+    free(ip);
+    free(port);
 }
 
 
@@ -346,12 +373,12 @@ int handle_awaiting_socket(server_t* server, int socket) {
 
     switch (opcode) {
     case CMSG_NEIGHBOURS:
-        applog(LOG_LEVEL_INFO, "[Server] Received CMSG_NEIGHBOURS\n");
+        applog(LOG_LEVEL_INFO, "[Client] Received CMSG_NEIGHBOURS\n");
         compute_and_send_neighbours(server, socket);
         break;
 
     case CMSG_JOIN:
-        applog(LOG_LEVEL_INFO, "[Server] Received CMSG_JOIN\n");
+        applog(LOG_LEVEL_INFO, "[Client] Received CMSG_JOIN\n");
         if (handle_join_request(server, socket) == 0) {
             return AWAIT_CLOSE;
         } else {
@@ -396,11 +423,47 @@ int handle_client(server_t* server) {
 
     switch (opcode) {
     case CMSG_INT_EXIT:
-        applog(LOG_LEVEL_INFO, "[Servent] Received CMSG_INT_EXIT\n");
+        applog(LOG_LEVEL_INFO, "[Local Server] Received CMSG_INT_EXIT\n");
         return 1;
+
+    case CMSG_INT_SEARCH:
+        applog(LOG_LEVEL_INFO, "[Local Server] Received CMSG_INT_SEARCH\n");
+        handle_client_search_request(server);
+        return 0;
 
     default:
         return 0;
+    }
+}
+
+
+void handle_pending_requests(server_t* server) {
+    cell_t* prev = NULL, *head = server->pending_requests->head;
+    while (head != NULL) {
+        request_t* request = (request_t*)head->data;
+        handle_pending_request(server, request);
+        list_pop_at(server->pending_requests, &prev, &head);
+    }
+}
+
+
+void handle_pending_request(server_t* server, request_t* request) {
+    switch (request->type) {
+    case REQUEST_SEARCH_LOCAL:
+        handle_local_search_request(server, request);
+        break;
+
+    case REQUEST_SEARCH_REMOTE:
+        handle_remote_search_request(server, request);
+        break;
+
+    case REQUEST_DOWNLOAD_LOCAL:
+        handle_local_download_request(server, request);
+        break;
+
+    case REQUEST_DOWNLOAD_REMOTE:
+        handle_remote_download_request(server, request);
+        break;
     }
 }
 

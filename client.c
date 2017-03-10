@@ -86,7 +86,7 @@ static void handle_command(client_t* client, char* command);
 /*
  * Handle the search of a file.
  */
-static void handle_search(client_t* client, char* command);
+static void handle_search(client_t* client);
 
 
 #define SEARCH_COMMAND "search"
@@ -215,20 +215,32 @@ void handle_command(client_t* client, char* command) {
     if (strcmp(command_name, DOWNLOAD_COMMAND) == 0) {
         applog(LOG_LEVEL_INFO, "[User] Download\n");
     } else if (strcmp(command_name, SEARCH_COMMAND) == 0) {
-        applog(LOG_LEVEL_INFO, "[User] Search");
+        handle_search(client);
     }
 }
 
 
-void handle_search(client_t* client, char* command) {
-    char* name = strtok(command, " ");
+void handle_search(client_t* client) {
+    char* name = strtok(NULL, " ");
     if (name == NULL) {
         log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. Tapez \"help\" pour vérifier la syntaxe.\n");
         return;
+    } else {
+        applog(LOG_LEVEL_INFO, "Recherche du fichier %s\n", name);
     }
 
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(name));
     char* ptr = data;
     *(opcode_t*)ptr = CMSG_INT_SEARCH;
     ptr += PKT_ID_SIZE;
+
+    *(uint8_t*)ptr = strlen(name);
+    ptr += sizeof(uint8_t);
+
+    memcpy(ptr, name, strlen(name));
+    ptr += strlen(name);
+
+    write_to_fd(client->server_socket, data, (intptr_t)ptr - (intptr_t)data);
+
+    free(data);
 }

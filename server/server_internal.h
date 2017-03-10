@@ -4,6 +4,7 @@
 
 #include "list.h"
 #include "server_defines.h"
+#include "request.h"
 
 
 typedef struct list_s list_t;
@@ -15,6 +16,10 @@ typedef uint16_t in_port_t;
 typedef int socket_t;
 
 
+/*
+ * Helper structure, storing a socket, and the port to contact the machine
+ * at the other extremity (used when sending neighbours).
+ */
 typedef struct socket_contact_s {
     socket_t sock;
     /* Port to connect to the machine where the other extremity of the socket
@@ -37,6 +42,8 @@ typedef struct server_s {
     int handshake;
     /* Awaiting sockets (i.e, we accepted but we have not yet dealt with them). */
     list_t* awaiting_sockets;
+    /* Pending requests. */
+    list_t* pending_requests;
 } server_t;
 
 
@@ -164,6 +171,29 @@ void send_neighbours_list(socket_t s, char** ips, char** ports,
 
 
 /*******************************************************************************
+ * Handling user packets
+ */
+
+
+/*
+ * Read the informations about the request on the socket and store a request
+ * inside the server.
+ */
+void handle_client_search_request(server_t* server);
+
+
+/*******************************************************************************
+ * Handling requests
+ */
+
+
+void handle_local_search_request(server_t* server, request_t* request);
+void handle_remote_search_request(server_t* server, request_t* request);
+void handle_local_download_request(server_t* server, request_t* request);
+void handle_remote_download_request(server_t* server, request_t* request);
+
+
+/*******************************************************************************
  * Utilities
  */
 
@@ -173,21 +203,5 @@ void send_neighbours_list(socket_t s, char** ips, char** ports,
  */
 LIST_CREATE_FN void* add_new_socket(void* s);
 
-
-/*
- * Extract the IP adress from addr if it's family is AF_INET or AF_INET6. The
- * result of this function is the same as if inet_ntop was called with the
- * correct arguments to extract the IP from addr casted to the appropriate
- * structure.
- *
- * This means that you must free the pointer returned by the function.
- */
-const char* extract_ip(const struct sockaddr_storage* addr, in_port_t* port);
-
-
-/*
- * Same as extract_ip, works with struct sockaddr instead.
- */
-const char* extract_ip_classic(const struct sockaddr* addr, in_port_t* port);
 
 #endif /* SERVER_INTERNAL_H */

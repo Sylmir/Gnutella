@@ -11,7 +11,7 @@
  * Time interval to check if we have an incoming request on the listening
  * socket. This is in milliseconds.
  */
-#define ACCEPT_TIMEOUT 100
+#define ACCEPT_TIMEOUT 10
 
 
 /*

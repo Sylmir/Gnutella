@@ -32,6 +32,8 @@ typedef uint8_t opcode_t;
 #define CMSG_JOIN CMSG(1)
 /* Client asks for a single neighbour from the target. */
 #define CMSG_NEIGHBOUR_RESCUE CMSG(2)
+/* Client asks for a list of machines that have a file. */
+#define CMSG_SEARCH_REQUEST CMSG(3)
 
 
 /* Server replies with it's direct neighbours. */

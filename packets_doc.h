@@ -7,7 +7,7 @@
 
 
 /*
- * In the following documentation, we will use the following terms :
+ * In the present documentation, we will use the following terms :
  *  - "Local Client" and "Local Server" refers to the two applications running
  * on the same computer. "Local Client" is the interactive application which let
  * user formulate requests, "Local Server" is the application that will handle
@@ -147,6 +147,32 @@
  * therefore refered to as ip_len.
  *  - ip_len bytes to store the IP adress in string representation.
  *  - 2 bytes to store the port used to contact the server.
+ */
+
+
+/*
+ * #define CMSG_SEARCH_REQUEST CMSG(3)
+ *
+ * Description:
+ *
+ * Content:
+ *  - PKT_ID_SIZE bytes to store the opcode.
+ *  - 1 byte to store the length of the IP in dotted-string representation,
+ * thereafter referred to as ip_length.
+ *  - ip_length bytes to store the dotted-string IP of the source machine.
+ *  - 1 byte to store the length of the name of the file, thereafter referred to
+ * as name_length
+ *  - name_length bytes to store the name of the file.
+ *  - 4 bytes to store the identifier of the packet (basically, a counter)
+ *  - 1 byte to store the TTL (reasearch depth)
+ *  - 1 byte to indicate the number of machines that have the file
+ *  For each machine we have the following informations:
+ *      - 1 byte to store the length of the distant ip (in dotted-string format),
+ * thereafter referred to as remote_ip_length
+ *      - remote_ip_length bytes to store the IP (in dotted-string format)
+ *      - 1 byte to store the length of the remote contact port (string format),
+ * thereafter referred to as remote_port_length
+ *      - remote_port_length bytes to store the length of the port.
  */
 
 
