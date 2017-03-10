@@ -172,6 +172,7 @@ int run_server(int first_machine, const char *listen_port,
     }
     server.nb_neighbours    = 0;
     server.handshake        = 0;
+    server.packet_counter   = 0;
 
     char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
     int listening_socket = create_listening_socket(listen_port == NULL ? SERVER_LISTEN_PORT : listen_port,

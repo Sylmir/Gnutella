@@ -141,3 +141,12 @@ void send_neighbours_list(socket_t s, char **ips, char **ports,
 
     free(data);
 }
+
+
+void broadcast_packet(server_t* server, void* packet, size_t size) {
+    for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
+        if (server->neighbours[i].sock != -1) {
+            write_to_fd(server->neighbours[i].sock, packet, size);
+        }
+    }
+}

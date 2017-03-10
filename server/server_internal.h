@@ -1,10 +1,12 @@
 #ifndef SERVER_INTERNAL_H
 #define SERVER_INTERNAL_H
 
+#include <stdint.h>
+#include <stdlib.h>
 
 #include "list.h"
-#include "server_defines.h"
 #include "request.h"
+#include "server_defines.h"
 
 
 typedef struct list_s list_t;
@@ -44,6 +46,8 @@ typedef struct server_s {
     list_t* awaiting_sockets;
     /* Pending requests. */
     list_t* pending_requests;
+    /* Counter to indicate how many packets we send (identify them). */
+    uint32_t packet_counter;
 } server_t;
 
 
@@ -168,6 +172,12 @@ void answer_join_request(server_t *server, socket_t s, uint8_t join);
  */
 void send_neighbours_list(socket_t s, char** ips, char** ports,
                           uint8_t nb_neighbours);
+
+
+/*
+ * Broadcast the packet to all the neighbours we have.
+ */
+void broadcast_packet(server_t* server, void* packet, size_t size);
 
 
 /*******************************************************************************

@@ -187,4 +187,17 @@ int elapsed_time_since(const struct timespec* begin);
 void millisleep(int milliseconds);
 
 
+/*
+ * Extract self IP and store it inside buffer as a string. The buffer must be
+ * long enough, otherwise behaviour is undefined.
+ */
+void extract_self_ip(char* ip);
+
+
+/*
+ * Extract self IP and return it as a mallocated string.
+ * Free it.
+ */
+char* extract_self_ip_s();
+
 #endif /* UTIL_H */

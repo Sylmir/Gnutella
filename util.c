@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/resource.h>
@@ -262,13 +263,39 @@ int elapsed_time_since(const struct timespec* begin) {
 
 
 void millisleep(int milliseconds) {
-    // printf("millisleep : %d\n", milliseconds);
     struct timespec timer;
     div_t res = div(milliseconds, 1000);
     timer.tv_sec = res.quot;
     timer.tv_nsec = res.rem * 1000 * 1000;
 
-    // printf("millisleep: s = %ld, n = %ld\n", timer.tv_sec, timer.tv_nsec);
-
     nanosleep(&timer, NULL);
+}
+
+
+void extract_self_ip(char* ip) {
+    char* hostname = malloc(1000);
+    gethostname(hostname, 1000);
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+
+    struct addrinfo* results;
+    getaddrinfo(hostname, NULL, &hints, &results);
+
+    struct sockaddr* addr = results->ai_addr;
+    if (addr->sa_family == AF_INET) {
+        struct sockaddr_in* v4 = (struct sockaddr_in*)addr;
+        inet_ntop(AF_INET, &(v4->sin_addr), ip, INET_ADDRSTRLEN);
+    } else if (addr->sa_family == AF_INET6) {
+        struct sockaddr_in6* v6 = (struct sockaddr_in6*)addr;
+        inet_ntop(AF_INET6, &(v6->sin6_addr), ip, INET6_ADDRSTRLEN);
+    }
+}
+
+
+char* extract_self_ip_s() {
+    char* ip = malloc(INET6_ADDRSTRLEN);
+    extract_self_ip(ip);
+    return ip;
 }
