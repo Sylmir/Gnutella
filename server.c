@@ -206,6 +206,7 @@ int run_server(int first_machine, const char *listen_port,
     }
 
     server.awaiting_sockets = list_create(compare_ints, add_new_socket);
+    server.pending_requests = list_create(NULL, add_new_request);
     signal(SIGINT, handle_sigint);
     loop(&server);
 

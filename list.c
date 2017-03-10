@@ -2,9 +2,17 @@
 
 #include "list.h"
 
+static int dummy_compare(void* a, void* b) {
+    return a == b;
+}
+
 list_t* list_create(compare_fn compare, create_fn create) {
     list_t* list = malloc(sizeof(list_t));
-    list->compare = compare;
+    if (create != NULL) {
+        list->compare = compare;
+    } else {
+        list->compare = dummy_compare;
+    }
     list->create = create;
     list->head = NULL;
     return list;

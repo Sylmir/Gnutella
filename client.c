@@ -221,7 +221,7 @@ void handle_command(client_t* client, char* command) {
 
 
 void handle_search(client_t* client) {
-    char* name = strtok(NULL, " ");
+    const char* name = strtok(NULL, "\0");
     if (name == NULL) {
         log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. Tapez \"help\" pour vérifier la syntaxe.\n");
         return;
