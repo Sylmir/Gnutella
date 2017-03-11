@@ -48,6 +48,8 @@ typedef struct server_s {
     list_t* pending_requests;
     /* Counter to indicate how many packets we send (identify them). */
     uint32_t packet_counter;
+    /* Our own IP. */
+    char* self_ip;
 } server_t;
 
 

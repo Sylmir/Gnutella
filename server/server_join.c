@@ -26,7 +26,7 @@
  *
  * The function return 0 if the IP:port is present, 1 if we can safely add.
  */
-static int ensure_unique_ip(const server_t* server, const char* ip, const char* port);
+static int ensure_absent_ip(const server_t* server, const char* ip, const char* port);
 
 
 int join_network(server_t* server, const char* ip, const char* port) {
@@ -51,11 +51,19 @@ int join_network(server_t* server, const char* ip, const char* port) {
 
 
 int join_network_through(server_t* server, const char* ip, const char* port) {
+    printf("toto\n");
     applog(LOG_LEVEL_INFO, "[Client] Joining network through %s:%s\n", ip, port);
 
     int socket = send_neighbours_request(ip, port);
     if (socket == -1) {
         return -1;
+    }
+
+    if (server->self_ip == NULL) {
+        char* self_ip, *self_port;
+        extract_ip_port_from_socket_s(socket, &self_ip, &self_port, 0);
+        applog(LOG_LEVEL_INFO, "Deduced self IP: %s\n", self_ip);
+        server->self_ip = self_ip;
     }
 
     opcode_t opcode;
@@ -79,11 +87,26 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
                            nb_neighbours, ip, port);
 
 
+    char ips[MAX_NEIGHBOURS][INET6_ADDRSTRLEN + 1];
+    char ports[MAX_NEIGHBOURS][6];
+    int index = 0;
+
     char *current_ip, *current_port;
     for (int i = 0; i < nb_neighbours; i++) {
         extract_neighbour_from_response(socket, &current_ip, &current_port);
         applog(LOG_LEVEL_INFO, "[Client] Received neighbour %s:%s\n",
                                current_ip, current_port);
+        if (server->self_ip != NULL) {
+            if(strcmp(current_ip, server->self_ip) == 0) {
+                applog(LOG_LEVEL_WARNING, "[Client] Received ourselves as neighbour. Ignoring.\n");
+                continue;
+            }
+        }
+
+        strcpy(ips[index], current_ip);
+        strcpy(ports[index], current_port);
+        index++;
+
         join(server, current_ip, current_port, awaiting, 0);
     }
 
@@ -92,23 +115,31 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
     if (nb_neighbours < MAX_NEIGHBOURS) {
         applog(LOG_LEVEL_INFO, "[Client] Asking contact point to join (remote %s:%s)\n",
                                ip, port);
+
+        strcpy(ips[index], ip);
+        strcpy(ports[index], port);
+        index++;
+
+        char* contact_ip = malloc(strlen(ip));
+        strcpy(contact_ip, ip);
+
+        char* contact_port = malloc(strlen(ip));
+        strcpy(contact_port, port);
+
         if (nb_neighbours == 0) {
-            join(server, ip, port, awaiting, 1);
+
+            join(server, contact_ip, contact_port, awaiting, 1);
         } else {
-            join(server, ip, port, awaiting, 0);
+            join(server, contact_ip, contact_port, awaiting, 0);
         }
     }
 
     handle_join_responses(server, awaiting);
 
     if (nb_neighbours > 0 && server->nb_neighbours < MIN_NEIGHBOURS) {
-        for (cell_t* cell = awaiting->head;
-             cell != NULL && server->nb_neighbours < MIN_NEIGHBOURS;
-             cell = cell->next) {
-            extract_ip_port_from_socket_s(*(int*)cell->data, &current_ip, &current_port, 1);
-            join_network_through(server, current_ip, current_port);
-            free(current_ip);
-            free(current_port);
+        for (int i = 0; i < index; i++) {
+            printf("Voisins supplémentaires sur %s:%s\n", ips[i], ports[i]);
+            join_network_through(server, ips[i], ports[i]);
         }
     }
 
@@ -120,7 +151,7 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
 
 void join(server_t* server, const char* ip, const char* port, list_t* sockets, int force) {
     applog(LOG_LEVEL_INFO, "[Client] Sending join request to %s:%s\n", ip, port);
-    if (ensure_unique_ip(server, ip, port) == 0) {
+    if (ensure_absent_ip(server, ip, port) == 0) {
         applog(LOG_LEVEL_INFO, "[Client] %s:%s already a neighbour.\n", ip, port);
         return;
     }
@@ -130,8 +161,8 @@ void join(server_t* server, const char* ip, const char* port, list_t* sockets, i
         return;
     }
 
-    applog(LOG_LEVEL_INFO, "[Client] Successfully sent join request to %s:%s\n",
-                           ip, port);
+    applog(LOG_LEVEL_INFO, "[Client] Successfully sent join request to %s:%s (%d)\n",
+                           ip, port, res);
 
     list_push_back(sockets, &res);
 
@@ -143,6 +174,7 @@ void join(server_t* server, const char* ip, const char* port, list_t* sockets, i
 void handle_join_responses(server_t* server, list_t* targets) {
     for (cell_t* head = targets->head; head != NULL; head = head->next) {
         int res = handle_join_response(*(socket_t*)head->data);
+        applog(LOG_LEVEL_INFO, "[Client] SMSG_JOIN (%d) => %d\n", *(int*)head->data, res);
         if (res == 1) {
             /* Continue handling of SMSG_JOIN. */
             uint8_t port_length;
@@ -156,7 +188,8 @@ void handle_join_responses(server_t* server, list_t* targets) {
 
             free(port);
         } else {
-            close(*(socket_t*)head->data);
+            /* Because other extremity is already closed. */
+            close(*(int*)head->data);
         }
     }
 }
@@ -169,7 +202,7 @@ int handle_join_response(socket_t s) {
 
     assert(opcode == SMSG_JOIN);
 
-    applog(LOG_LEVEL_INFO, "[Client] Received SMSG_JOIN\n");
+    applog(LOG_LEVEL_INFO, "[Client] Received SMSG_JOIN (%d)\n", s);
 
     uint8_t answer;
     read_from_fd(s, &answer, sizeof(uint8_t));
@@ -221,7 +254,7 @@ int handle_join_request(server_t* server, socket_t sock) {
 }
 
 
-int ensure_unique_ip(const server_t* server, const char* ip, const char* port) {
+int ensure_absent_ip(const server_t* server, const char* ip, const char* port) {
     for (int i = 0; i < MAX_NEIGHBOURS; i++) {
         if (server->neighbours[i].sock != -1) {
             char* sock_ip, *sock_port;
