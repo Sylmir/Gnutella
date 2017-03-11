@@ -91,7 +91,8 @@ void extract_neighbour_from_response(socket_t s, char **ip, char **port);
  * end of the function (no, I'm not going to make a version where the free
  * is not called, just malloc your damn buffers).
  */
-void join(server_t* server, const char* ip, const char* port, list_t* sockets);
+void join(server_t* server, const char* ip, const char* port, list_t* sockets,
+          int force);
 
 
 /*
@@ -180,6 +181,13 @@ void send_neighbours_list(socket_t s, char** ips, char** ports,
 void broadcast_packet(server_t* server, void* packet, size_t size);
 
 
+/*
+ * Read the informations about the request on the socket and create a request to
+ * deal with it later.
+ */
+void handle_remote_search_request(server_t* server, int sock);
+
+
 /*******************************************************************************
  * Handling user packets
  */
@@ -189,7 +197,7 @@ void broadcast_packet(server_t* server, void* packet, size_t size);
  * Read the informations about the request on the socket and store a request
  * inside the server.
  */
-void handle_client_search_request(server_t* server);
+void handle_local_search_request(server_t* server);
 
 
 /*******************************************************************************
@@ -197,10 +205,10 @@ void handle_client_search_request(server_t* server);
  */
 
 
-void handle_local_search_request(server_t* server, request_t* request);
-void handle_remote_search_request(server_t* server, request_t* request);
-void handle_local_download_request(server_t* server, request_t* request);
-void handle_remote_download_request(server_t* server, request_t* request);
+void answer_local_search_request(server_t* server, request_t* request);
+void answer_remote_search_request(server_t* server, request_t* request);
+void answer_local_download_request(server_t* server, request_t* request);
+void answer_remote_download_request(server_t* server, request_t* request);
 
 
 /*******************************************************************************

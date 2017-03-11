@@ -115,6 +115,22 @@ static int handle_neighbours(server_t* server);
 
 
 /*
+ * Handle a single neighbour. The function returns 1 to indicate we must remove
+ * the neighbour from the list of neighbours, and 0 if we have nothing special
+ * to do.
+ */
+static int handle_neighbour(server_t* server, socket_contact_t* neighbour);
+
+
+/*
+ * Display a list of our current neighbours on the standard output stream. Since
+ * this comes at a cost, this function should not be used too frequently and only
+ * for debugging purposes.
+ */
+static void display_neighbours(const server_t* server);
+
+
+/*
  * Check if the client has something to say, and handle the requests if any. If
  * the client sent CMSG_INT_EXIT, the function return 1 to indicate we must stop.
  * Otherwise it return 0.
@@ -189,12 +205,6 @@ int run_server(int first_machine, const char *listen_port,
 
     server.listening_socket = listening_socket;
 
-    struct sockaddr_storage addr;
-    socklen_t len = sizeof(addr);
-    getsockname(server.listening_socket, (struct sockaddr*)&addr, &len);
-
-    printf("%d\n", ntohs(((struct sockaddr_in*)&addr)->sin_port));
-
     if (first_machine == 0) {
         int res = join_network(&server, ip, port);
 
@@ -232,11 +242,13 @@ int loop(server_t* server) {
         handle_awaiting_sockets(server);
 
         if (print_timer <= time_diff) {
-            handle_neighbours(server);
+            display_neighbours(server);
             print_timer = 2000;
         } else {
             print_timer -= time_diff;
         }
+
+        handle_neighbours(server);
 
         if (handle_client(server) == 1) {
             _loop = 0;
@@ -261,7 +273,7 @@ void handle_accept_result(server_t *server, int result) {
     }
 
     if (result == -1) {
-        applog(LOG_LEVEL_ERROR, "Erreur durant l'acceptation : %s.\n",
+        applog(LOG_LEVEL_ERROR, "[Server] Erreur durant accept() : %s.\n",
                strerror(errno));
         return;
     }
@@ -285,6 +297,8 @@ void handle_accept_result(server_t *server, int result) {
             strcmp(ip, "0000:0000:0000:0000:0000:0000:0000:0001") == 0) {
             int handshake_result = handshake(server, socket);
             handle_handshake_result(server, handshake_result);
+            free(ip);
+            free(port);
             return;
         } else {
             handle_new_socket(server, socket);
@@ -400,15 +414,52 @@ int handle_awaiting_socket(server_t* server, int socket) {
 int handle_neighbours(server_t* server) {
     for (int i = 0; i < MAX_NEIGHBOURS; i++) {
         if (server->neighbours[i].sock != -1) {
+            int remove = handle_neighbour(server, server->neighbours + i);
+            if (remove == 1) {
+                close(server->neighbours[i].sock);
+                free(server->neighbours[i].port);
+                server->neighbours[i].sock = -1;
+                --server->nb_neighbours;
+            }
+        }
+    }
+    return 0;
+}
+
+
+int handle_neighbour(server_t* server, socket_contact_t* neighbour) {
+    int sock = neighbour->sock;
+    struct pollfd poller;
+    int poll_res = poll_fd(&poller, sock, POLLIN, AWAIT_TIMEOUT);
+
+    if (poll_res == 0) {
+        return 0;
+    }
+
+    opcode_t opcode;
+    read_from_fd(sock, &opcode, PKT_ID_SIZE);
+
+    switch (opcode) {
+    case CMSG_SEARCH_REQUEST:
+        break;
+    }
+
+    return 0;
+}
+
+
+void display_neighbours(const server_t* server) {
+    applog(LOG_LEVEL_INFO, "[Client] Displaying neighbours\n");
+    for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+        if (server->neighbours[i].sock != -1) {
             char ip[INET6_ADDRSTRLEN];
             char port[6];
             extract_ip_port_from_socket(server->neighbours[i].sock, ip, port, 1);
 
-            applog(LOG_LEVEL_INFO, "Neighbour: %s:%s, contact = %s\n",
+            applog(LOG_LEVEL_INFO, "[Client] Neighbour: %s:%s, contact = %s\n",
                    ip, port, server->neighbours[i].port);
         }
     }
-    return 0;
 }
 
 
@@ -430,7 +481,7 @@ int handle_client(server_t* server) {
 
     case CMSG_INT_SEARCH:
         applog(LOG_LEVEL_INFO, "[Local Server] Received CMSG_INT_SEARCH\n");
-        handle_client_search_request(server);
+        handle_local_search_request(server);
         return 0;
 
     default:
@@ -452,19 +503,19 @@ void handle_pending_requests(server_t* server) {
 void handle_pending_request(server_t* server, request_t* request) {
     switch (request->type) {
     case REQUEST_SEARCH_LOCAL:
-        handle_local_search_request(server, request);
+        answer_local_search_request(server, request);
         break;
 
     case REQUEST_SEARCH_REMOTE:
-        handle_remote_search_request(server, request);
+        answer_remote_search_request(server, request);
         break;
 
     case REQUEST_DOWNLOAD_LOCAL:
-        handle_local_download_request(server, request);
+        answer_local_download_request(server, request);
         break;
 
     case REQUEST_DOWNLOAD_REMOTE:
-        handle_remote_download_request(server, request);
+        answer_remote_download_request(server, request);
         break;
     }
 }
@@ -477,6 +528,7 @@ void clear_server(server_t* server) {
     for (int i = 0; i < MAX_NEIGHBOURS; ++i) {
         if (server->neighbours[i].sock != -1) {
             close(server->neighbours[i].sock);
+            free(server->neighbours[i].port);
         }
         server->neighbours[i].sock = -1;
     }
@@ -486,6 +538,7 @@ void clear_server(server_t* server) {
     }
 
     list_destroy(&(server->awaiting_sockets));
+    list_destroy(&(server->pending_requests));
 }
 
 

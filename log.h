@@ -35,18 +35,17 @@ void debug_assert(bool condition, const char* format, ...);
  */
 void debug_file_assert(bool condition, FILE* file, const char* format, ...);
 
-/* Debug informations: variable content, trace of functions etc... */
-#define LOG_LEVEL_DEBUG     0
+
 /* Information: received message, sent message etc... */
-#define LOG_LEVEL_INFO      1
+#define LOG_LEVEL_INFO      0
 /* Warning: minor errors. */
-#define LOG_LEVEL_WARNING   2
+#define LOG_LEVEL_WARNING   1
 /* Critical: application shouldn't shut down, but may be in an unstable state. */
-#define LOG_LEVEL_ERROR     3
+#define LOG_LEVEL_ERROR     2
 /* Fatal: application must shut down. */
-#define LOG_LEVEL_FATAL     4
+#define LOG_LEVEL_FATAL     3
 /* Maximum log level. */
-#define LOG_LEVEL_MAX       5
+#define LOG_LEVEL_MAX       4
 
 
 /*

@@ -6,7 +6,7 @@
 #include "server_internal.h"
 #include "util.h"
 
-void handle_client_search_request(server_t* server) {
+void handle_local_search_request(server_t* server) {
     uint8_t name_len;
     read_from_fd(server->client_socket, &name_len, sizeof(uint8_t));
 

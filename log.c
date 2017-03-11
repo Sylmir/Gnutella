@@ -38,10 +38,6 @@ static void log_critical(FILE* file, const char* message);
 static void log_fatal(FILE* file, const char* message);
 
 
-/* Log debug will only work in DEBUG mode. */
-static void log_debug(FILE* file, const char* message);
-
-
 /* Maximum length of a message we want to log. */
 #define MAX_BUFFER_LENGTH 4096
 /* As string. Note that this MUST be the same as MAX_BUFFER_LENGTH. */
@@ -134,9 +130,6 @@ void log_internal(log_function_t log_fn, const char* format,
 
 log_function_t get_log_function_by_level(int log_level) {
     switch (log_level) {
-    case LOG_LEVEL_DEBUG:
-        return log_debug;
-
     case LOG_LEVEL_INFO:
         return log_info;
 
@@ -157,9 +150,6 @@ log_function_t get_log_function_by_level(int log_level) {
 
 FILE* get_log_file_by_level(int log_level) {
     switch (log_level) {
-    case LOG_LEVEL_DEBUG:
-        return stdout;
-
     case LOG_LEVEL_INFO:
         return stdout;
 
@@ -179,17 +169,30 @@ FILE* get_log_file_by_level(int log_level) {
 
 #ifndef DEBUG
 
-void log_debug(FILE* file, const char* message) {
+void log_info(FILE* file, const char* message) {
+    UNUSED(file);
+    UNUSED(message);
+}
 
+
+void log_warning(FILE* file, const char* message) {
+    UNUSED(file);
+    UNUSED(message);
+}
+
+
+void log_critical(FILE* file, const char* message) {
+    UNUSED(file);
+    UNUSED(message);
+}
+
+
+void log_fatal(FILE* file, const char* message) {
+    UNUSED(file);
+    UNUSED(message);
 }
 
 #else
-
-void log_debug(FILE* file, const char* message) {
-
-}
-
-#endif /* DEBUG */
 
 void log_info(FILE* file, const char* message) {
     const char* format = "\033[0;38;2;0;204;204m[Info]: %s";
@@ -218,3 +221,5 @@ void log_fatal(FILE* file, const char* message) {
     fprintf(file, "\033[0;39m");
     fprintf(file, "\033[0;49m");
 }
+
+#endif /* DEBUG */

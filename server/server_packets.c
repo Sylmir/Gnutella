@@ -49,7 +49,8 @@ void answer_join_request(server_t* server, socket_t s, uint8_t join) {
 
 // CMSG_NEIGHBOURS (C -> S)
 int send_neighbours_request(const char* ip, const char* port) {
-    applog(LOG_LEVEL_INFO, "send_neighbours_request: %s:%s\n", ip, port);
+    applog(LOG_LEVEL_INFO, "[Client] Sending neighbours request to %s:%s\n",
+                           ip, port);
     int socket = -1;
     int res = connect_to(ip, port, &socket);
     if (res != CONNECT_OK) {
@@ -85,8 +86,6 @@ int send_join_request(server_t* server, const char* ip,
 
     char listening_port[6];
     extract_port_from_socket(server->listening_socket, listening_port, 0);
-
-    applog(LOG_LEVEL_INFO, "[Client] Extracted port : %s\n", listening_port);
 
     *(uint8_t*)ptr = strlen(listening_port);
     ptr += sizeof(uint8_t);

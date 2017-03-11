@@ -3,6 +3,12 @@
 
 
 /*
+ * Minimum number of neighbours, duh.
+ */
+#define MIN_NEIGHBOURS 2
+
+
+/*
  * Maximum number of neighbours.
  */
 #define MAX_NEIGHBOURS 5
@@ -31,5 +37,11 @@
  * IP which will be used as the contact point.
  */
 #define CONTACT_POINT "134.214.88.230"
+
+
+/*
+ * The directory in which we store the files that can be downloaded.
+ */
+#define SEARCH_DIRECTORY "files"
 
 #endif /* SERVER_DEFINES_H */

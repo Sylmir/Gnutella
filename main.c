@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
 
     pid_t server_pid = fork();
     if (server_pid < 0) {
-        applog(LOG_LEVEL_FATAL, "Erreur lors du fork pour créer le serveur. "
+        applog(LOG_LEVEL_FATAL, "[Boot] Erreur lors du fork pour créer le serveur. "
                                 "Extinction.\n");
         return EXIT_CLIENT_NO_FORK;
     } else if (server_pid == 0) {
@@ -266,6 +266,7 @@ void handle_argv(int argc, char **argv, int phase, void *context) {
 
 
 void handle_argv_boot(int argc, char** argv, void* context) {
+    UNUSED(context);
     for (int i = 0; i < argc; ) {
         int increment = 1;
         const char* value = argv[i];

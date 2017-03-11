@@ -156,7 +156,7 @@ int loop(client_t* client) {
         strncpy(command, temp, strlen(temp) - 1);
         command[strlen(temp) - 1] = '\0';
         if (strcmp(command, "") == 0) {
-            printf("Commande vide\n");
+            applog(LOG_LEVEL_WARNING, "Commande vide\n");
             continue;
         } else if (strcmp(command, EXIT_COMMAND) == 0) {
             continue_loop = 0;
@@ -223,7 +223,8 @@ void handle_command(client_t* client, char* command) {
 void handle_search(client_t* client) {
     const char* name = strtok(NULL, "\0");
     if (name == NULL) {
-        log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. Tapez \"help\" pour vérifier la syntaxe.\n");
+        log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. "
+                                             "Tapez \"help\" pour vérifier la syntaxe.\n");
         return;
     } else {
         applog(LOG_LEVEL_INFO, "Recherche du fichier %s\n", name);

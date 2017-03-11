@@ -181,7 +181,8 @@ int attempt_accept(int listening_socket, int timeout,
     if (res == 1 && (poller.revents & POLLIN) != 0) {
         int accept_res = accept(listening_socket, addr, addr_len);
         if (accept_res == -1 && errno == EINVAL) {
-            printf("addr_len = %d\n", *addr_len);
+            // printf("addr_len = %d\n", *addr_len);
+            debug_assert(false, "accept() : addr invalide ou socket non en écoute.\n");
         }
         return accept_res;
     }

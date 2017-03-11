@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include "log.h"
 #include "packets_defines.h"
 #include "server_internal.h"
 #include "util.h"
@@ -71,19 +72,24 @@ void compute_and_send_neighbours(server_t* server, socket_t s) {
 
 void add_neighbour(server_t* server, socket_t s, const char *contact_port) {
     if (server->nb_neighbours == MAX_NEIGHBOURS) {
-        const_free(contact_port);
         return;
     }
+
+    char* ip = extract_ip_from_socket_s(s, 1);
+    applog(LOG_LEVEL_INFO, "[Client] Adding neighbour %s, contact %s (%d)\n",
+                           ip, contact_port, s);
+    free(ip);
 
     for (int i = 0; i < MAX_NEIGHBOURS; i++) {
         if (server->neighbours[i].sock == -1) {
             server->neighbours[i].sock = s;
             set_string(&(server->neighbours[i].port), contact_port);
-            const_free(contact_port);
             ++server->nb_neighbours;
             return;
         }
     }
+
+    applog(LOG_LEVEL_ERROR, "[Client] Neighbour not added !\n");
 }
 
 
