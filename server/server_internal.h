@@ -76,8 +76,16 @@ int join_network(server_t* server, const char* ip, const char* port);
 /*
  * Actively join the P2P network (join_network acting as a helper function). The
  * function will return 0 on success, and -1 on failure.
+ *
+ * The function will call itself recursively up to nb_attempts time (counting
+ * from the first call). This prevents us from looping indefinitely searching
+ * neighbours, but also increases our chances of finding at least MIN_NEIGHBOURS
+ * neighbours.
+ *
+ * If we end up with at least MIN_NEIGHBOURS at one point, the recursion stops.
  */
-int join_network_through(server_t* server, const char* ip, const char* port);
+int join_network_through(server_t* server, const char* ip, const char* port,
+                         int nb_attempts);
 
 
 /*

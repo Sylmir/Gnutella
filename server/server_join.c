@@ -34,15 +34,15 @@ int join_network(server_t* server, const char* ip, const char* port) {
 
     if (ip == NULL) {
         if (port == NULL) {
-            res = join_network_through(server, CONTACT_POINT, CONTACT_PORT);
+            res = join_network_through(server, CONTACT_POINT, CONTACT_PORT, JOIN_MAX_ATTEMPTS);
         } else {
-            res = join_network_through(server, CONTACT_POINT, port);
+            res = join_network_through(server, CONTACT_POINT, port, JOIN_MAX_ATTEMPTS);
         }
     } else {
         if (port == NULL) {
-            res = join_network_through(server, ip, CONTACT_PORT);
+            res = join_network_through(server, ip, CONTACT_PORT, JOIN_MAX_ATTEMPTS);
         } else {
-            res = join_network_through(server, ip, port);
+            res = join_network_through(server, ip, port, JOIN_MAX_ATTEMPTS);
         }
     }
 
@@ -50,7 +50,12 @@ int join_network(server_t* server, const char* ip, const char* port) {
 }
 
 
-int join_network_through(server_t* server, const char* ip, const char* port) {
+int join_network_through(server_t* server, const char* ip, const char* port,
+                         int nb_attempts) {
+    if (nb_attempts < 0) {
+        return 0;
+    }
+
     printf("toto\n");
     applog(LOG_LEVEL_INFO, "[Client] Joining network through %s:%s\n", ip, port);
 
@@ -139,7 +144,7 @@ int join_network_through(server_t* server, const char* ip, const char* port) {
     if (nb_neighbours > 0 && server->nb_neighbours < MIN_NEIGHBOURS) {
         for (int i = 0; i < index; i++) {
             printf("Voisins supplémentaires sur %s:%s\n", ips[i], ports[i]);
-            join_network_through(server, ips[i], ports[i]);
+            join_network_through(server, ips[i], ports[i], nb_attempts - 1);
         }
     }
 
@@ -247,8 +252,9 @@ int handle_join_request(server_t* server, socket_t sock) {
 
     if (answer == 1) {
         add_neighbour(server, sock, port);
-        free(port);
     }
+
+    free(port);
 
     return answer;
 }

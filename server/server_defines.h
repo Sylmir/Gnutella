@@ -13,6 +13,13 @@
  */
 #define MAX_NEIGHBOURS 5
 
+
+/*
+ * Number of times we attempt to get neighbours.
+ */
+#define JOIN_MAX_ATTEMPTS 5
+
+
 /*
  * Time interval to check if we have an incoming request on the listening
  * socket. This is in milliseconds.

@@ -152,7 +152,7 @@ int loop(client_t* client) {
     while (continue_loop == 1) {
         printf("@gnutella$ ");
         char* temp = read_command();
-        char* command = malloc(strlen(temp) - 1);
+        char* command = malloc(strlen(temp));
         strncpy(command, temp, strlen(temp) - 1);
         command[strlen(temp) - 1] = '\0';
         if (strcmp(command, "") == 0) {

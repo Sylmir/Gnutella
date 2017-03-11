@@ -140,7 +140,7 @@ int check_ip(const char* ip) {
 
 
 void set_string(char** target, const char* content) {
-    *target = malloc(strlen(content));
+    *target = malloc(strlen(content) + 1);
     strcpy(*target, content);
 }
 
