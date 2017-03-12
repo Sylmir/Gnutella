@@ -46,6 +46,25 @@ static int check_unique_request(server_t* server, const search_request_t* reques
 
 
 /*
+ * Clean a search request.
+ */
+static void clean_search_request(search_request_t* request);
+
+
+/*
+ * If we are the source sender and we received the packet, forward it immediately
+ * to our local client.
+ */
+static void forward_to_local(server_t* server, search_request_t* request);
+
+
+/*
+ * Send the results of one search to our local client.
+ */
+static void send_search_answer_to_client(server_t* server, const char* filename,
+                                         uint8_t nb_ips, char** ips, char** ports);
+
+/*
  * Default depth when we are searching for a file on the network. Each time a
  * machine receives the packet (assuming it has not yet received it once),
  * it decreases the TTL by one. When the TTL reaches 0, the machine responds
@@ -66,7 +85,7 @@ void handle_remote_search_request(server_t* server, int sock) {
     read_from_fd(sock, &source_port_len, sizeof(uint8_t));
 
     char* port_source = malloc(source_port_len + 1);
-    read_from_fd(sock, &port_source, source_port_len);
+    read_from_fd(sock, port_source, source_port_len);
     port_source[source_port_len] = '\0';
 
     uint8_t file_name_length;
@@ -122,35 +141,48 @@ void handle_remote_search_request(server_t* server, int sock) {
 void answer_local_search_request(server_t* server, request_t* request) {
     local_search_request_t* local_request = (local_search_request_t*)request->request;
 
-    if (search_file(local_request->name) == 1) {
-        return;
-    }
+    applog(LOG_LEVEL_INFO, "[Client] Searching file %s\n", local_request->name);
+
+    int has_file = search_file(local_request->name);
+
+    applog(LOG_LEVEL_INFO, "[Client] Found file = %d\n", has_file);
 
     /*
      * Packet ID + length IP + IP + length port + port + length filename +
      * filename + ttl + nb_ips.
      */
     void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + INET6_ADDRSTRLEN +
-                          sizeof(uint8_t) + 5 + sizeof(uint8_t) + 255 + 1 + 1);
+                          sizeof(uint8_t) + 5 + sizeof(uint8_t) + 255 + 1 + 1 +
+                          1 + INET6_ADDRSTRLEN + 1 + 5);
     char* data = packet;
 
-    *(opcode_t*)data = CMSG_SEARCH_REQUEST;
+    if (has_file == 1) {
+        *(opcode_t*)data = SMSG_INT_SEARCH;
+    } else {
+        *(opcode_t*)data = CMSG_SEARCH_REQUEST;
+    }
     data += PKT_ID_SIZE;
 
-    const char* local_ip = server->self_ip;
 
-    *(uint8_t*)data = strlen(local_ip);
-    data += sizeof(uint8_t);
+    if (has_file == 0) {
+        const char* local_ip = server->self_ip;
 
-    memcpy(data, local_ip, strlen(local_ip));
-    data += strlen(local_ip);
+        *(uint8_t*)data = strlen(local_ip);
+        data += sizeof(uint8_t);
 
-    char* port = extract_port_from_socket_s(server->listening_socket, 0);
-    *(uint8_t*)data = strlen(port);
-    data += sizeof(uint8_t);
+        memcpy(data, local_ip, strlen(local_ip));
+        data += strlen(local_ip);
 
-    memcpy(data, port, strlen(port));
-    data += strlen(port);
+        char* port = extract_port_from_socket_s(server->listening_socket, 0);
+        applog(LOG_LEVEL_INFO, "Contact port: %s, %d\n", port, strlen(port));
+        *(uint8_t*)data = strlen(port);
+        data += sizeof(uint8_t);
+
+        strcpy(data, port);
+        data += strlen(port);
+
+        free(port);
+    }
 
     *(uint8_t*)data = strlen(local_request->name);
     data += sizeof(uint8_t);
@@ -158,13 +190,36 @@ void answer_local_search_request(server_t* server, request_t* request) {
     memcpy(data, local_request->name, strlen(local_request->name));
     data += strlen(local_request->name);
 
-    *(uint8_t*)data = DEFAULT_TTL;
+    if (has_file == 0) {
+        *(uint8_t*)data = DEFAULT_TTL;
+        data += sizeof(uint8_t);
+    }
+
+    if (has_file == 0) {
+        *(uint8_t*)data = 0;
+    } else {
+        *(uint8_t*)data = 1;
+    }
     data += sizeof(uint8_t);
 
-    *(uint8_t*)data = 0;
-    data += sizeof(uint8_t);
+    if (has_file == 0) {
+        broadcast_packet(server, packet, (intptr_t)data - (intptr_t)packet);
+    } else {
+        *(uint8_t*)data = strlen(server->self_ip);
+        data += sizeof(uint8_t);
 
-    broadcast_packet(server, packet, (intptr_t)data - (intptr_t)packet);
+        strcpy(data, server->self_ip);
+        data += strlen(server->self_ip);
+
+        char* port = extract_port_from_socket_s(server->listening_socket, 0);
+        *(uint8_t*)data = strlen(port);
+        data += sizeof(uint8_t);
+
+        strcpy(data, port);
+        data += strlen(port);
+
+        write_to_fd(server->client_socket, packet, (intptr_t)data - (intptr_t)packet);
+    }
 
     free(packet);
     free(local_request);
@@ -173,6 +228,13 @@ void answer_local_search_request(server_t* server, request_t* request) {
 
 void answer_remote_search_request(server_t* server, request_t* request) {
     search_request_t* local_request = (search_request_t*)request->request;
+
+    /* If we are the source machine, forward to local. */
+    if (strcmp(server->self_ip, local_request->ip_source) == 0) {
+        forward_to_local(server, local_request);
+        return;
+    }
+
     int unique = check_unique_request(server, local_request);
     int server_answer = 0;
 
@@ -286,16 +348,7 @@ void answer_remote_search_request(server_t* server, request_t* request) {
 
 
     free(packet);
-    free(local_request->filename);
-    for (int i = 0; i < local_request->nb_ips; i++) {
-        free(local_request->ips[i]);
-        free(local_request->ports[i]);
-    }
-    free(local_request->ips);
-    free(local_request->ip_source);
-    free(local_request->ports);
-    free(local_request->port_source);
-    free(local_request);
+    clean_search_request(local_request);
 }
 
 
@@ -326,6 +379,8 @@ int search_file(const char* filename) {
     close(fds[1]);
     int status = -1;
     waitpid(find_pid, &status, 0);
+
+    applog(LOG_LEVEL_INFO, "[Client] Statut du fils : %d\n", status);
 
     signed char value;
     read(fds[0], &value, sizeof(signed char));
@@ -404,6 +459,34 @@ void handle_remote_search_answer(server_t* server, int sock) {
         read_from_fd(sock, ports[i], port_length);
     }
 
+    send_search_answer_to_client(server, filename, nb_ips, ips, ports);
+}
+
+
+void clean_search_request(search_request_t* request) {
+
+    free(request->filename);
+    for (int i = 0; i < request->nb_ips; i++) {
+        free(request->ips[i]);
+        free(request->ports[i]);
+    }
+    free(request->ips);
+    free(request->ip_source);
+    free(request->ports);
+    free(request->port_source);
+    free(request);
+}
+
+
+void forward_to_local(server_t* server, search_request_t* request) {
+    send_search_answer_to_client(server, request->filename, request->nb_ips,
+                                 request->ips, request->ports);
+    clean_search_request(request);
+}
+
+
+void send_search_answer_to_client(server_t* server, const char* filename,
+                                  uint8_t nb_ips, char** ips, char** ports) {
     int target = server->client_socket;
     void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(filename) +
                           nb_ips *

@@ -221,6 +221,11 @@ int handle_join_response(int s) {
 
 // Handle CMSG_JOIN (Server)
 int handle_join_request(server_t* server, int sock) {
+    if (server->self_ip == NULL) {
+        server->self_ip = extract_ip_from_socket_s(sock, 0);
+        applog(LOG_LEVEL_INFO, "[Server] Deduced self IP : %s\n", server->self_ip);
+    }
+
     uint8_t rescue;
     read_from_fd(sock, &rescue, sizeof(uint8_t));
 

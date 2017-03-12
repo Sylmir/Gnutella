@@ -245,7 +245,7 @@ int run_server(int first_machine, const char *listen_port,
 
 
 int loop(server_t* server) {
-    int print_timer = 2 * IN_MILLISECONDS;
+    int print_timer = 10 * IN_MILLISECONDS;
     int time_diff = LOOP_MIN_DURATION;
     while (_loop == 1) {
         struct timespec begin;
@@ -261,7 +261,7 @@ int loop(server_t* server) {
 
         if (print_timer <= time_diff) {
             display_neighbours(server);
-            print_timer = 2000;
+            print_timer = 10000;
         } else {
             print_timer -= time_diff;
         }
@@ -272,7 +272,14 @@ int loop(server_t* server) {
             _loop = 0;
         }
 
-        handle_pending_requests(server);
+        /*
+         * If we don't have at least one neighbour, sending a request accross
+         * the network has no sense. Moreover, it means we don't know server->self_ip,
+         * and since the packets rely on it... Niah...
+         */
+        if (server->nb_neighbours != 0) {
+            handle_pending_requests(server);
+        }
 
         update_log_timers(server, time_diff);
 
@@ -466,6 +473,7 @@ int handle_neighbour(server_t* server, socket_contact_t* neighbour) {
         break;
 
     case CMSG_LEAVE:
+        applog(LOG_LEVEL_INFO, "[Server] Received CMSG_LEAVE\n");
         return 1;
 
     case SMSG_SEARCH_REQUEST:
@@ -506,6 +514,7 @@ int handle_client(server_t* server) {
     switch (opcode) {
     case CMSG_INT_EXIT:
         applog(LOG_LEVEL_INFO, "[Local Server] Received CMSG_INT_EXIT\n");
+        leave_network(server);
         return 1;
 
     case CMSG_INT_SEARCH:

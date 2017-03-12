@@ -8,7 +8,7 @@ static int dummy_compare(void* a, void* b) {
 
 list_t* list_create(compare_fn compare, create_fn create) {
     list_t* list = malloc(sizeof(list_t));
-    if (create != NULL) {
+    if (compare != NULL) {
         list->compare = compare;
     } else {
         list->compare = dummy_compare;

@@ -15,19 +15,15 @@
 #include <unistd.h>
 
 #include "client.h"
+#include "client_defines.h"
+#include "client_internal.h"
 #include "common.h"
+#include "list.h"
 #include "log.h"
 #include "networking.h"
 #include "packets_defines.h"
 #include "server.h"
 #include "util.h"
-
-
-/* The structure to represent the client. */
-typedef struct client_s {
-    /* Socket to communicate with the associated server. */
-    int server_socket;
-} client_t;
 
 
 /*
@@ -78,27 +74,21 @@ static char* read_command();
 
 
 /*
+ * Read the new packets sent by the local servent.
+ */
+static void handle_servent(client_t* client);
+
+
+/*
  * Handle the command passed as a parameter.
  */
 static void handle_command(client_t* client, char* command);
 
 
 /*
- * Handle the search of a file.
- */
-static void handle_search(client_t* client);
-
-
-/*
  * Handle the download of a file.
  */
 static void handle_download(client_t* client);
-
-
-/*
- * Display the informations about the machine that possess a given file.
- */
-static void handle_lookup(client_t* client);
 
 
 #define SEARCH_COMMAND "search"
@@ -137,6 +127,7 @@ int run_client(const char* connection_port) {
     }
 
     applog(LOG_LEVEL_INFO, "[User] Serveur OK (Handshake).\n");
+    client.machines_by_files = list_create(NULL, create_lookup);
     loop(&client);
 
     clear_client(&client);
@@ -177,6 +168,7 @@ int loop(client_t* client) {
         }
 
         handle_command(client, command);
+        handle_servent(client);
         free(temp);
         free(command);
     }
@@ -186,8 +178,11 @@ int loop(client_t* client) {
 
 void clear_client(client_t* client) {
     write_exit_packet(client);
+
     close(client->server_socket);
     client->server_socket = -1;
+
+
 }
 
 
@@ -196,6 +191,26 @@ void write_exit_packet(client_t* client) {
     write_to_fd(client->server_socket, &opcode, PKT_ID_SIZE);
 
     applog(LOG_LEVEL_INFO, "[User] Sent CMSG_INT_EXIT\n");
+}
+
+
+void handle_servent(client_t* client) {
+    struct pollfd poller;
+    int res = poll_fd(&poller, client->server_socket, POLLIN, SERVENT_AWAIT_TIMEOUT);
+
+    if (res == 1) {
+        opcode_t opcode;
+        read_from_fd(client->server_socket, &opcode, PKT_ID_SIZE);
+
+        switch (opcode) {
+        case SMSG_INT_SEARCH:
+            handle_search_answer(client);
+            break;
+
+        default:
+            break;
+        }
+    }
 }
 
 
@@ -236,38 +251,6 @@ void handle_command(client_t* client, char* command) {
 }
 
 
-void handle_search(client_t* client) {
-    const char* name = strtok(NULL, "\0");
-    if (name == NULL) {
-        log_to_file(LOG_LEVEL_ERROR, stdout, "Erreur dans la commande de recherche. "
-                                             "Tapez \"help\" pour vérifier la syntaxe.\n");
-        return;
-    } else {
-        applog(LOG_LEVEL_INFO, "Recherche du fichier %s\n", name);
-    }
-
-    void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(name));
-    char* ptr = data;
-    *(opcode_t*)ptr = CMSG_INT_SEARCH;
-    ptr += PKT_ID_SIZE;
-
-    *(uint8_t*)ptr = strlen(name);
-    ptr += sizeof(uint8_t);
-
-    memcpy(ptr, name, strlen(name));
-    ptr += strlen(name);
-
-    write_to_fd(client->server_socket, data, (intptr_t)ptr - (intptr_t)data);
-
-    free(data);
-}
-
-
 static void handle_download(client_t* client) {
-
-}
-
-
-static void handle_lookup(client_t* client) {
 
 }

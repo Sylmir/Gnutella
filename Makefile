@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -ggdb -std=c11 -I. -Iserver -D DEBUG
-ALL_SOURCES = $(wildcard *.c) $(wildcard server/*.c)
+CFLAGS = -Wall -Wextra -ggdb -std=c11 -I. -Iserver -Iclient -D DEBUG
+ALL_SOURCES = $(wildcard *.c) $(wildcard client/*.c) $(wildcard server/*.c)
 ALL_OBJECTS = $(ALL_SOURCES:%.c=%.o)
 
 # Main application 
