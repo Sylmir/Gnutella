@@ -155,6 +155,8 @@ int loop(client_t* client) {
         command[strlen(temp) - 1] = '\0';
         if (strcmp(command, "") == 0) {
             applog(LOG_LEVEL_WARNING, "Commande vide\n");
+            free(temp);
+            free(command);
             continue;
         } else if (strcmp(command, EXIT_COMMAND) == 0) {
             continue_loop = 0;
@@ -218,6 +220,10 @@ void handle_servent(client_t* client) {
         switch (opcode) {
         case SMSG_INT_SEARCH:
             handle_search_answer(client);
+            break;
+
+        case SMSG_INT_DOWNLOAD:
+            handle_download_answer(client);
             break;
 
         default:

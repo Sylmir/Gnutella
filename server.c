@@ -643,8 +643,76 @@ void clear_server(server_t* server) {
         close(*(int*)head);
     }
 
+    for (cell_t* received_head = server->received_search_requests->head;
+         received_head != NULL; received_head = received_head->next) {
+        search_request_log_t* log = (search_request_log_t*)received_head->data;
+        const_free(log->filename);
+        const_free(log->source_ip);
+        const_free(log->source_port);
+    }
+    list_destroy(&(server->received_search_requests));
+
+    for (cell_t* awaiting_head = server->awaiting_sockets->head;
+         awaiting_head != NULL; awaiting_head = awaiting_head->next) {
+        int sock = *(int*)awaiting_head->data;
+        close(sock);
+    }
     list_destroy(&(server->awaiting_sockets));
+
+    for (cell_t* pending_requests_head = server->pending_requests->head;
+         pending_requests_head != NULL; pending_requests_head = pending_requests_head->next) {
+        request_t* request = (request_t*)pending_requests_head->data;
+
+        switch (request->type) {
+        case REQUEST_DOWNLOAD_LOCAL: {
+            download_request_t* download = (download_request_t*)request->request;
+            free(download->filename);
+            free(download->ip);
+            free(download->port);
+            break;
+        }
+
+        case REQUEST_DOWNLOAD_REMOTE: {
+            remote_download_request_t* download = (remote_download_request_t*)request->request;
+            free(download->filename);
+            close(download->socket);
+            break;
+        }
+
+        case REQUEST_SEARCH_LOCAL: {
+            local_search_request_t* search = (local_search_request_t*)request->request;
+            const_free(search->name);
+            break;
+        }
+
+        case REQUEST_SEARCH_REMOTE: {
+            search_request_t* search = (search_request_t*)request->request;
+            free(search->filename);
+            for (int i = 0; i < search->nb_ips; i++) {
+                free(search->ips[i]);
+                free(search->ports[i]);
+            }
+            free(search->ips);
+            free(search->ip_source);
+            free(search->ports);
+            free(search->port_source);
+            close(search->source_sock);
+            break;
+        }
+
+        default:
+            break;
+        }
+
+        free(request->request);
+    }
     list_destroy(&(server->pending_requests));
+
+    for (cell_t* pending_downloads_head = server->pending_downloads->head;
+         pending_downloads_head != NULL; pending_downloads_head = pending_downloads_head->next) {
+        close(*(int*)pending_downloads_head->data);
+    }
+    list_destroy(&(server->pending_downloads));
 }
 
 

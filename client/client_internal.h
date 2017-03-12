@@ -103,4 +103,9 @@ LIST_CREATE_FN void* create_lookup(void* lookup);
 void handle_download(client_t* client);
 
 
+/*
+ * Read the answer to print something indicating the download is over.
+ */
+void handle_download_answer(client_t* client);
+
 #endif /* CLIENT_INTERNAL_H */

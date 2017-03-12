@@ -33,7 +33,7 @@ void handle_local_download_request(server_t* server) {
 
     read_from_fd(server->client_socket, &ip_length, sizeof(uint8_t));
     char* ip = malloc(ip_length + 1);
-    read_from_fd(server->client_socket, ip, name_length);
+    read_from_fd(server->client_socket, ip, ip_length);
 
     read_from_fd(server->client_socket, &port_length, sizeof(uint8_t));
     char* port = malloc(port_length + 1);
@@ -50,10 +50,12 @@ void handle_local_download_request(server_t* server) {
     request_t request;
     request.type = REQUEST_DOWNLOAD_LOCAL;
 
-    download_request_t* download_request = malloc(sizeof(download_request_t*));
+    download_request_t* download_request = malloc(sizeof(download_request_t));
     download_request->filename = filename;
     download_request->ip = ip;
     download_request->port = port;
+
+    request.request = download_request;
 
     list_push_back(server->pending_requests, &request);
 }

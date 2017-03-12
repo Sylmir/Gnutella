@@ -69,6 +69,9 @@ int join_network_through(server_t* server, const char* ip, const char* port,
         extract_ip_port_from_socket_s(socket, &self_ip, &self_port, 0);
         applog(LOG_LEVEL_INFO, "Deduced self IP: %s\n", self_ip);
         server->self_ip = self_ip;
+
+        free(self_ip);
+        free(self_port);
     }
 
     opcode_t opcode;
@@ -125,10 +128,10 @@ int join_network_through(server_t* server, const char* ip, const char* port,
         strcpy(ports[index], port);
         index++;
 
-        char* contact_ip = malloc(strlen(ip));
+        char* contact_ip = malloc(strlen(ip) + 1);
         strcpy(contact_ip, ip);
 
-        char* contact_port = malloc(strlen(ip));
+        char* contact_port = malloc(strlen(port) + 1);
         strcpy(contact_port, port);
 
         if (nb_neighbours == 0) {
