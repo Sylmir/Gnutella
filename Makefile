@@ -39,3 +39,5 @@ clean:
 veryclean: clean
 	rm -f $(EXEC)
 	rm -f $(TESTS)
+
+rebuild: veryclean all

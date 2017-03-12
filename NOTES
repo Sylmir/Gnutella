@@ -1,4 +1,52 @@
-Ensemble de notes concernant le projet
-  - Est-ce que c'est le client qui tire des nombres pour savoir s'il rejoint chaque serveur ou est-ce
-  que c'est le serveur qui tire un nombre pour déterminer s'il accepte ou non la connexion du serveur
-  ? Actuellement, on est sur le serveur qui tire un nombre pour déterminer s'il accepte ou non.
+Idées non mises en place:
+    - Mettre en place un ping-pong (heartbeat) entre les machines pour s'assurer 
+qu'elles sont toujours en lignes
+    - Les packets *MSG_NEIGHBOURS_RESCUE étaient censé permettre de gérer la 
+volatilité des pairs de façon mineure. Quand une machine A se rend compte qu'un 
+voisin est parti, MSG_NEIGHBOURS_RESCUE est envoyé à un voisin B qui renvoie un 
+autre de ses voisins C, et MSG_JOIN est envoyé en mode rescue à C, afin que A
+puisse avoir un nouveau point d'ancrage dans le réseau, tout en formant une 
+boucle pour éviter les cassures. 
+        - Le système de rescue est déjà en place, ce n'est que la gestion des 
+départs de voisins qui ne l'est pas. 
+    - Le téléchargement des fichiers est extrêmement coûteux, compte tenu du fait 
+que le fichier est envoyé en une fois. Une idée qui m'était venue était de fragmenter
+le fichier et de stocker les offsets d'arrêt pour l'envoyer en plusieurs, en 
+découpant en multiple packets contenant les offsets de début et de fin, afin de 
+laisser le soin à la machine qui demande le téléchargement de réassembler le fichier 
+par elle-même. Néanmoins, cela aurait demandé beaucoup de temps, et je n'en avais 
+pas assez.
+
+Possibilités d'évolution:
+    - Je m'étais interrogé sur comment fonctionne une application P2P dans l'Internet,
+lorsque les machines se trouvent derrière des NAT. La stratégie du port forwarding
+m'est venue, mais n'est pas très user-friendly, et limite le nombre de machines 
+derrière un NAT à une seule machine. J'ai donc regardé les techniques de NAT 
+Traversal, dont le hole punching. La structure socket_contact_t pourrait servir 
+de base à la mise en place de cette technique pour que l'application fonctionne 
+ailleurs qu'en réseau local.
+
+Remarques en vrac:
+    - C++11 aurait été extrêmement pratique par moments, notamment pour une 
+meilleure gestion de la mémoire (avec std::unique_ptr). 
+    - La stratégie utilisée pour l'envoi des packets (allouer de la mémoire et 
+se déplacer dans la région renvoyée par malloc en écrivant progressivement dedans)
+m'est apparue comme celle permettant de limiter la quantité d'informations qui 
+transitent dans le réseau en envoyant une seule bande continue d'information,
+dépourvue de tout message superflu. L'utilisation de memcpy pour écrire dans 
+la zone renvoyée par malloc est arrivée assez tard (le dernier jour en fait), 
+quand j'ai appris que déréférencer void* en le castant en un type T sans s'assurer 
+que l'adresse contenue dans le pointeur est alignée pour T peut provoquer des 
+erreurs voire des crashs. 
+    - La gestion de la volatilité des pairs est très moyenne. Si une des applications 
+plante, il vaut mieux arrêter toutes les instances pour ensuite les relancer. 
+C'est assez gênant, malheureusement je n'ai pas réussi à faire mieux dans le temps 
+qui nous était imparti.
+    - Concernant le sujet: un peu trop vaste je pense. On ne pouvait pas vraiment 
+savoir qu'est-ce qui était le plus important, ni exactement ce qu'on attendait de
+nous, jusqu'à quel point l'application devait être détaillée etc... J'ai personnellement
+choisi de faire au mieux de ce que je pouvais faire, en implémentant les fonctionnalités
+principales (recherche de voisins, joindre le réseau, rechercher un fichier et 
+télécharger un fichier).
+    - Le fichier src/packets_doc.h est là uniquement à des fins de documentation,
+il contient la description (au mieux) des différents paquets et leur structure. 

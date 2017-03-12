@@ -5,3 +5,4 @@ gnutella.*
 core-server
 network
 tests
+*.log

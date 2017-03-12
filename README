@@ -1,0 +1,51 @@
+11408771 MAILLE Amaury
+
+Introduction
+	SylmirGnutella est une application P2P permettant à des machines situées dans 
+un même réseau local de communiquer entre elles afin de rechercher des fichiers 
+et de les télécharger entre machines.
+
+Structure du projet
+	Par TOP on désignera le répertoire racine du projet, c'est à dire le dossier 
+contenant le sous-répertoire src, ainsi que le présent README.
+    TOP/src/ contient les fichiers sources ainsi que le Makefile permettant de
+générer le projet. 
+    TOP/README est le présent README contenant les présentes informations. (Incroyable).
+    TOP/src/files contient les fichiers téléchargés et téléchargeables
+    
+Compilation
+    Pour compiler le projet, il faut se placer dans TOP/src/x et lancer make. Le Makefile 
+supporte les cibles suivantes :
+        - all: génère l'exécutable principal ainsi que l'exécutable de test (qui
+permet de faire des tests "quelconques", sans rigueur)
+        - network (nom de la recette déterminé à partir de TOP/src/common.h): 
+génère l'exécutable principal
+        - tests: génère l'exécutable de test 
+        - clean: supprime les résidus de compilation (fichiers .o) 
+        - veryclean: supprime les résidus de compilation ainsi que les exécutables
+	- rebuild: reconstruit tous les exécutables de zéro
+        
+Utilisation
+    Pour lancer le projet, il faut se placer dans TOP/src, et taper ./network (
+le nom de l'exécutable est déterminé à partir de TOP/src/common.h), suivi des 
+arguments. 
+        - -f | --first : indique que la machine est la première du réseau ; elle 
+ne cherchera pas de voisins et sera directement en attente de connexions. 
+        - -c | --contact ip port: indique que la première machine à communiquer est 
+la machine  d'IP "ip" sur le port "port" ; quand ce flag est absent, les 
+informations sont récupérées depuis TOP/src/server/server_internal.h
+        - -cerr file: redirige la sortie d'erreur de l'application utilisateur 
+vers le fichier "file"
+        - -cout file: redirige la sortie standard de l'application utilisateur 
+vers le fichier "file"
+        - -serr: redirige la sortie d'erreur de l'application servent vers le 
+fichier "file"
+        - -sout: redirige la sortie standard de l'application servent vers le 
+fichier "file"
+        - -l | --listen port: indique le port sur lequel l'application servent 
+écoutera les connexions entrantes
+        - -h | --help: affiche l'aide et quitte l'application
+        
+Remarques
+    Voir le fichier NOTES pour des informations supplémentaires (idées non 
+mises en places, améliorations envisagées, cas d'utilisation etc...)
