@@ -145,18 +145,20 @@ void set_string(char** target, const char* content) {
 }
 
 
-void free_reset(void** ptr) {
-    if (*ptr != NULL) {
-        free(*ptr);
-        *ptr = NULL;
+void free_reset(void* ptr) {
+    void** _ptr = (void**)ptr;
+    if (*_ptr != NULL) {
+        free(*_ptr);
+        *_ptr = NULL;
     }
 }
 
 
-void const_free_reset(const void **ptr) {
-    if (*ptr != NULL) {
-        const_free(*ptr);
-        *ptr = NULL;
+void const_free_reset(const void* ptr) {
+    void** _ptr = (void**)ptr;
+    if (*_ptr != NULL) {
+        const_free(*_ptr);
+        *_ptr = NULL;
     }
 }
 
@@ -269,33 +271,4 @@ void millisleep(int milliseconds) {
     timer.tv_nsec = res.rem * 1000 * 1000;
 
     nanosleep(&timer, NULL);
-}
-
-
-void extract_self_ip(char* ip) {
-    char* hostname = malloc(1000);
-    gethostname(hostname, 1000);
-
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
-
-    struct addrinfo* results;
-    getaddrinfo(hostname, NULL, &hints, &results);
-
-    struct sockaddr* addr = results->ai_addr;
-    if (addr->sa_family == AF_INET) {
-        struct sockaddr_in* v4 = (struct sockaddr_in*)addr;
-        inet_ntop(AF_INET, &(v4->sin_addr), ip, INET_ADDRSTRLEN);
-    } else if (addr->sa_family == AF_INET6) {
-        struct sockaddr_in6* v6 = (struct sockaddr_in6*)addr;
-        inet_ntop(AF_INET6, &(v6->sin6_addr), ip, INET6_ADDRSTRLEN);
-    }
-}
-
-
-char* extract_self_ip_s() {
-    char* ip = malloc(INET6_ADDRSTRLEN);
-    extract_self_ip(ip);
-    return ip;
 }

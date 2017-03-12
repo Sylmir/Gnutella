@@ -17,7 +17,7 @@
 
 
 // SMSG_JOIN (S -> C)
-void answer_join_request(server_t* server, socket_t s, uint8_t join) {
+void answer_join_request(server_t* server, int s, uint8_t join) {
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + 5);
     char* ptr = data;
 
@@ -105,7 +105,7 @@ int send_join_request(server_t* server, const char* ip,
 
 
 // SMSG_NEIGHBOURS (S -> C)
-void send_neighbours_list(socket_t s, char **ips, char **ports,
+void send_neighbours_list(int s, char **ips, char **ports,
                           uint8_t nb_neighbours) {
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) +
                         nb_neighbours * (INET6_ADDRSTRLEN + 5 + 2 * sizeof(uint8_t)));
@@ -148,4 +148,17 @@ void broadcast_packet(server_t* server, void* packet, size_t size) {
             write_to_fd(server->neighbours[i].sock, packet, size);
         }
     }
+}
+
+
+void broadcast_packet_to(int* sockets, int nb_sockets, void* packet, size_t size) {
+    for (int i = 0; i < nb_sockets; i++) {
+        write_to_fd(sockets[i], packet, size);
+    }
+}
+
+
+void leave_network(server_t* server) {
+    opcode_t opcode = CMSG_LEAVE;
+    broadcast_packet(server, &opcode, PKT_ID_SIZE);
 }

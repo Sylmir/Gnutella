@@ -15,7 +15,7 @@
 
 
 // Handle SMSG_NEIGHBOURS (Client)
-void extract_neighbour_from_response(socket_t s, char** ip, char** port) {
+void extract_neighbour_from_response(int s, char** ip, char** port) {
     uint8_t ip_len;
     read_from_fd(s, &ip_len, sizeof(uint8_t));
 
@@ -40,7 +40,7 @@ void* add_new_socket(void* s) {
 
 
 // Build data for SMSG_NEIGHBOURS (Server)
-void compute_and_send_neighbours(server_t* server, socket_t s) {
+void compute_and_send_neighbours(server_t* server, int s) {
     uint8_t nb_neighbours = 0;
     char* ips[MAX_NEIGHBOURS] = { NULL };
     char* ports[MAX_NEIGHBOURS] = { NULL };
@@ -70,7 +70,7 @@ void compute_and_send_neighbours(server_t* server, socket_t s) {
 }
 
 
-void add_neighbour(server_t* server, socket_t s, const char *contact_port) {
+void add_neighbour(server_t* server, int s, const char *contact_port) {
     if (server->nb_neighbours == MAX_NEIGHBOURS) {
         return;
     }

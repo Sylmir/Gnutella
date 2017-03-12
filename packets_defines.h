@@ -34,6 +34,8 @@ typedef uint8_t opcode_t;
 #define CMSG_NEIGHBOUR_RESCUE CMSG(2)
 /* Client asks for a list of machines that have a file. */
 #define CMSG_SEARCH_REQUEST CMSG(3)
+/* Client leaves the network. */
+#define CMSG_LEAVE CMSG(4)
 
 
 /* Server replies with it's direct neighbours. */
@@ -42,6 +44,8 @@ typedef uint8_t opcode_t;
 #define SMSG_JOIN SMSG(1)
 /* Server replies with a neighbour. */
 #define SMSG_NEIGHBOUR_RESCUE SMSG(2)
+/* Server replies with a list of machines that have a file. */
+#define SMSG_SEARCH_REQUEST SMSG(3)
 
 
 /* Client contact server to notify it's ready. */

@@ -132,7 +132,6 @@ int join_network_through(server_t* server, const char* ip, const char* port,
         strcpy(contact_port, port);
 
         if (nb_neighbours == 0) {
-
             join(server, contact_ip, contact_port, awaiting, 1);
         } else {
             join(server, contact_ip, contact_port, awaiting, 0);
@@ -178,18 +177,18 @@ void join(server_t* server, const char* ip, const char* port, list_t* sockets, i
 
 void handle_join_responses(server_t* server, list_t* targets) {
     for (cell_t* head = targets->head; head != NULL; head = head->next) {
-        int res = handle_join_response(*(socket_t*)head->data);
+        int res = handle_join_response(*(int*)head->data);
         applog(LOG_LEVEL_INFO, "[Client] SMSG_JOIN (%d) => %d\n", *(int*)head->data, res);
         if (res == 1) {
             /* Continue handling of SMSG_JOIN. */
             uint8_t port_length;
-            read_from_fd(*(socket_t*)head->data, &port_length, sizeof(uint8_t));
+            read_from_fd(*(int*)head->data, &port_length, sizeof(uint8_t));
 
             char* port = malloc(port_length + 1);
-            read_from_fd(*(socket_t*)head->data, port, port_length);
+            read_from_fd(*(int*)head->data, port, port_length);
             port[port_length] = '\0';
 
-            add_neighbour(server, *(socket_t*)head->data, port);
+            add_neighbour(server, *(int*)head->data, port);
 
             free(port);
         } else {
@@ -201,7 +200,7 @@ void handle_join_responses(server_t* server, list_t* targets) {
 
 
 // Handle SMSG_JOIN (Client)
-int handle_join_response(socket_t s) {
+int handle_join_response(int s) {
     opcode_t opcode;
     read_from_fd(s, &opcode, PKT_ID_SIZE);
 
@@ -221,7 +220,7 @@ int handle_join_response(socket_t s) {
 
 
 // Handle CMSG_JOIN (Server)
-int handle_join_request(server_t* server, socket_t sock) {
+int handle_join_request(server_t* server, int sock) {
     uint8_t rescue;
     read_from_fd(sock, &rescue, sizeof(uint8_t));
 
@@ -279,4 +278,45 @@ int ensure_absent_ip(const server_t* server, const char* ip, const char* port) {
     }
 
     return 1;
+}
+
+
+int handle_leave(server_t* server, socket_contact_t* departed) {
+    close(departed->sock);
+    departed->sock = -1;
+    free_reset(&(departed->port));
+
+    --server->nb_neighbours;
+
+    if (server->nb_neighbours < MIN_NEIGHBOURS) {
+        for (int i = 0; i < MAX_NEIGHBOURS; i++) {
+            if (server->neighbours[i].sock != -1) {
+                char* contact_ip, *contact_port;
+                extract_ip_port_from_socket_s(server->neighbours[i].sock,
+                                              &contact_ip, &contact_port, 1);
+
+                /*
+                 * Technically this means the other end is closed, so we could
+                 * remove it right now, but why complicate the function with
+                 * recursion that might make us loop weirdly ?
+                 */
+                if (strcmp(contact_ip, "") == 0 || strcmp(contact_port, "") == 0) {
+                    free(contact_ip);
+                    free(contact_port);
+                    continue;
+                }
+
+                join_network_through(server, contact_ip, contact_port, JOIN_MAX_ATTEMPTS);
+                free(contact_ip);
+                free(contact_port);
+                break;
+            }
+        }
+    }
+
+    if (server->nb_neighbours == 0) {
+        return 1;
+    }
+
+    return 0;
 }

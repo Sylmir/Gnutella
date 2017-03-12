@@ -89,13 +89,27 @@ static void handle_command(client_t* client, char* command);
 static void handle_search(client_t* client);
 
 
+/*
+ * Handle the download of a file.
+ */
+static void handle_download(client_t* client);
+
+
+/*
+ * Display the informations about the machine that possess a given file.
+ */
+static void handle_lookup(client_t* client);
+
+
 #define SEARCH_COMMAND "search"
 #define DOWNLOAD_COMMAND "download"
+#define LOOKUP_COMMAND "lookup"
 #define HELP_COMMAND "help"
 #define EXIT_COMMAND "exit"
 static const char* commands[][2] = {
     { HELP_COMMAND, "Affiche l'aide." },
     { SEARCH_COMMAND " nom_de_fichier", "Demande la recherche du fichier <nom_de_fichier>." },
+    { LOOKUP_COMMAND " nom_de_fichier", "Demander la liste des machines qui possèdent le fichier <nom_de_fichier>." },
     { DOWNLOAD_COMMAND " nom_de_fichier [ip port]", "Effectue le téléchargement du fichier <nom_de_fichier> depuis la machine d'IP <ip> sur le port <port>.\n"
                                            "\tSi IP ou port n'est pas spécifié, une recherche est effectuée, puis une machine est sélectionnée au hasard parmis les candidates." },
     { EXIT_COMMAND, "Quitte l'application." },
@@ -213,9 +227,11 @@ void handle_command(client_t* client, char* command) {
 
     char* command_name = strtok(command, " ");
     if (strcmp(command_name, DOWNLOAD_COMMAND) == 0) {
-        applog(LOG_LEVEL_INFO, "[User] Download\n");
+        handle_download(client);
     } else if (strcmp(command_name, SEARCH_COMMAND) == 0) {
         handle_search(client);
+    } else if (strcmp(command_name, LOOKUP_COMMAND) == 0) {
+        handle_lookup(client);
     }
 }
 
@@ -244,4 +260,14 @@ void handle_search(client_t* client) {
     write_to_fd(client->server_socket, data, (intptr_t)ptr - (intptr_t)data);
 
     free(data);
+}
+
+
+static void handle_download(client_t* client) {
+
+}
+
+
+static void handle_lookup(client_t* client) {
+
 }

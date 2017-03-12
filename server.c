@@ -110,6 +110,9 @@ static int handle_awaiting_socket(server_t* server, int socket);
  * Loop over the neighbours sockets and answers to their requests if any. If the
  * other extremity of a socket has been closed, we set it to -1 and decrease our
  * number of neighbours by one.
+ *
+ * The function returns 0 to indicate nothing special happened, or 1 if we ran
+ * out of neighbours. In that case, we shutdown.
  */
 static int handle_neighbours(server_t* server);
 
@@ -174,6 +177,19 @@ static void handle_pending_requests(server_t* server);
 static void handle_pending_request(server_t* server, request_t* request);
 
 
+/*
+ * Update all the timers inside the list of logs to remove obsolete logs. diff
+ * represent the time in milliseconds the server took to perform it's previous
+ * loop.
+ *
+ * Entries are removed when their internal timer reaches 0. This, obviously, is
+ * not a perfect solution, as the rules of the Internet could lead us to reply
+ * to an already answered request because the request came with so much delay
+ * that we already removed the log.
+ */
+static void update_log_timers(server_t* server, long int diff);
+
+
 /******************************************************************************/
 
 
@@ -188,7 +204,6 @@ int run_server(int first_machine, const char *listen_port,
     }
     server.nb_neighbours    = 0;
     server.handshake        = 0;
-    server.packet_counter   = 0;
     server.self_ip          = NULL;
 
     char host_name[NI_MAXHOST], port_number[NI_MAXSERV];
@@ -219,8 +234,10 @@ int run_server(int first_machine, const char *listen_port,
 
     server.awaiting_sockets = list_create(compare_ints, add_new_socket);
     server.pending_requests = list_create(NULL, add_new_request);
+    server.received_search_requests = list_create(NULL, add_new_search_request_log);
     signal(SIGINT, handle_sigint);
     loop(&server);
+    leave_network(&server);
 
     clear_server(&server);
     return EXIT_SUCCESS;
@@ -229,7 +246,7 @@ int run_server(int first_machine, const char *listen_port,
 
 int loop(server_t* server) {
     int print_timer = 2 * IN_MILLISECONDS;
-    int time_diff = 0;
+    int time_diff = LOOP_MIN_DURATION;
     while (_loop == 1) {
         struct timespec begin;
         clock_gettime(CLOCK_REALTIME, &begin);
@@ -256,6 +273,8 @@ int loop(server_t* server) {
         }
 
         handle_pending_requests(server);
+
+        update_log_timers(server, time_diff);
 
         time_diff = elapsed_time_since(&begin);
         if (time_diff < LOOP_MIN_DURATION) {
@@ -417,13 +436,14 @@ int handle_neighbours(server_t* server) {
         if (server->neighbours[i].sock != -1) {
             int remove = handle_neighbour(server, server->neighbours + i);
             if (remove == 1) {
-                close(server->neighbours[i].sock);
-                free(server->neighbours[i].port);
-                server->neighbours[i].sock = -1;
-                --server->nb_neighbours;
+                int res = handle_leave(server, server->neighbours + i);
+                if (res == 1) {
+                    return 1;
+                }
             }
         }
     }
+
     return 0;
 }
 
@@ -442,6 +462,14 @@ int handle_neighbour(server_t* server, socket_contact_t* neighbour) {
 
     switch (opcode) {
     case CMSG_SEARCH_REQUEST:
+        handle_remote_search_request(server, sock);
+        break;
+
+    case CMSG_LEAVE:
+        return 1;
+
+    case SMSG_SEARCH_REQUEST:
+        handle_remote_search_answer(server, neighbour->sock);
         break;
     }
 
@@ -518,6 +546,20 @@ void handle_pending_request(server_t* server, request_t* request) {
     case REQUEST_DOWNLOAD_REMOTE:
         answer_remote_download_request(server, request);
         break;
+    }
+}
+
+
+void update_log_timers(server_t* server, long int diff) {
+    cell_t* prev = NULL, *head = server->received_search_requests->head;
+    while (head != NULL) {
+        search_request_log_t* log_request = (search_request_log_t*)head->data;
+        if (log_request->delete_timer <= diff) {
+            list_pop_at(server->received_search_requests, &prev, &head);
+        } else {
+            prev = head;
+            head = head->next;
+        }
     }
 }
 

@@ -10,12 +10,6 @@
 
 
 typedef struct list_s list_t;
-struct sockaddr;
-struct sockaddr_storage;
-typedef uint16_t in_port_t;
-
-
-typedef int socket_t;
 
 
 /*
@@ -23,7 +17,7 @@ typedef int socket_t;
  * at the other extremity (used when sending neighbours).
  */
 typedef struct socket_contact_s {
-    socket_t sock;
+    int sock;
     /* Port to connect to the machine where the other extremity of the socket
      * is present. */
     char* port;
@@ -46,8 +40,8 @@ typedef struct server_s {
     list_t* awaiting_sockets;
     /* Pending requests. */
     list_t* pending_requests;
-    /* Counter to indicate how many packets we send (identify them). */
-    uint32_t packet_counter;
+    /* Search requests we received. */
+    list_t* received_search_requests;
     /* Our own IP. */
     char* self_ip;
 } server_t;
@@ -92,7 +86,7 @@ int join_network_through(server_t* server, const char* ip, const char* port,
  * Extract the next neighbour from socket (assuming we are handling SMSG_NEIGHBOURS_REPLY).
  * The IP and port are stored inside ip and port.
  */
-void extract_neighbour_from_response(socket_t s, char **ip, char **port);
+void extract_neighbour_from_response(int s, char **ip, char **port);
 
 
 /*
@@ -119,19 +113,19 @@ void handle_join_responses(server_t* server, list_t* targets);
  * Return 0 if the servent refused the request, return 1 if the servent accepted
  * the request.
  */
-int handle_join_response(socket_t s);
+int handle_join_response(int s);
 
 
 /*
  * Compute a list of neighbours to send through socket.
  */
-void compute_and_send_neighbours(server_t* server, socket_t s);
+void compute_and_send_neighbours(server_t* server, int s);
 
 
 /*
  * Add the socket if we can handle more neighbours.
  */
-void add_neighbour(server_t* server, socket_t s, const char* contact_port);
+void add_neighbour(server_t* server, int s, const char* contact_port);
 
 
 /*
@@ -142,7 +136,16 @@ void add_neighbour(server_t* server, socket_t s, const char* contact_port);
  * The function return 0 or 1 to indicate if refused the request or not (so we
  * can remove the socket from the awaiting queue without closing it).
  */
-int handle_join_request(server_t* server, socket_t sock);
+int handle_join_request(server_t* server, int sock);
+
+
+/*
+ * Handle CMSG_LEAVE from departed.  This basically remove departed from our list
+ * of neighbours, and eventually make us search neighbours again.
+ *
+ * The function return 0 if we still have neighbours, 1 otherwise.
+ */
+int handle_leave(server_t* server, socket_contact_t* departed);
 
 
 /*******************************************************************************
@@ -174,14 +177,14 @@ int send_join_request(server_t *server, const char* ip, const char* port, uint8_
  * Answer to a join request through the socket. join indicate if we accepted
  * the request.
  */
-void answer_join_request(server_t *server, socket_t s, uint8_t join);
+void answer_join_request(server_t *server, int s, uint8_t join);
 
 
 
 /*
  * Send the neighbours to the client on the "other side" of socket.
  */
-void send_neighbours_list(socket_t s, char** ips, char** ports,
+void send_neighbours_list(int s, char** ips, char** ports,
                           uint8_t nb_neighbours);
 
 
@@ -192,10 +195,29 @@ void broadcast_packet(server_t* server, void* packet, size_t size);
 
 
 /*
+ * Broadcast the packet to all the neighbours in the array.
+ */
+void broadcast_packet_to(int* sockets, int nb_sockets, void* packet, size_t size);
+
+
+/*
  * Read the informations about the request on the socket and create a request to
  * deal with it later.
  */
 void handle_remote_search_request(server_t* server, int sock);
+
+
+/*
+ * Broadcast the leave packet to all neighbours.
+ */
+void leave_network(server_t* server);
+
+
+/*
+ * Read the answer to a CMSG_SEARCH_REQUEST (SMSG answer) and forward the
+ * informations to the local client, through SMSG_INT_SEARCH.
+ */
+void handle_remote_search_answer(server_t* server, int sock);
 
 
 /*******************************************************************************
