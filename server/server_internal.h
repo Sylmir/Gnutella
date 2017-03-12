@@ -42,6 +42,8 @@ typedef struct server_s {
     list_t* pending_requests;
     /* Search requests we received. */
     list_t* received_search_requests;
+    /* Sockets that are pending download. */
+    list_t* pending_downloads;
     /* Our own IP. */
     char* self_ip;
 } server_t;
@@ -220,6 +222,20 @@ void leave_network(server_t* server);
 void handle_remote_search_answer(server_t* server, int sock);
 
 
+/*
+ * Read the answer to a CMSG_DOWNLOAD (SMSG_DOWNLOAD), write the file on the
+ * disk and notifies the client the download is over.
+ */
+void handle_remote_download_answer(server_t* server, int sock);
+
+
+/*
+ * Read the informations about the request on the socket and create a request to
+ * deal with it later.
+ */
+void handle_remote_download_request(server_t* server, int sock);
+
+
 /*******************************************************************************
  * Handling user packets
  */
@@ -230,6 +246,13 @@ void handle_remote_search_answer(server_t* server, int sock);
  * inside the server.
  */
 void handle_local_search_request(server_t* server);
+
+
+/*
+ * Read the informations about the request on the socket and store a request
+ * inside the server.
+ */
+void handle_local_download_request(server_t* server);
 
 
 /*******************************************************************************

@@ -74,6 +74,30 @@ typedef struct search_request_log_s {
 
 
 /*
+ * Structure to hold the informations relative to a download request.
+ */
+typedef struct download_request_s {
+    /* IP of the machine to contact. */
+    char* ip;
+    /* Port to contact on the machine. */
+    char* port;
+    /* Name of the file we are searching. */
+    char* filename;
+} download_request_t;
+
+
+/*
+ * Structure to hold the informations about a remote download request.
+ */
+typedef struct remote_download_request_s {
+    /* Socket to which we answer. */
+    int socket;
+    /* Name of the file the remote wants to download. */
+    char* filename;
+} remote_download_request_t;
+
+
+/*
  * Add a coyp-in-heap of req inside a list (creating function).
  */
 LIST_CREATE_FN void* add_new_request(void* req);

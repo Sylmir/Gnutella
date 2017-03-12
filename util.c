@@ -43,7 +43,7 @@ int read_from_fd(int fd, void* buffer, size_t size) {
         _read += res;
     }
 
-    return 0;
+    return _read;
 }
 
 
@@ -271,4 +271,10 @@ void millisleep(int milliseconds) {
     timer.tv_nsec = res.rem * 1000 * 1000;
 
     nanosleep(&timer, NULL);
+}
+
+
+void write_to_packet(char** pkt, const void* data, int length) {
+    memcpy(*pkt, data, length);
+    *pkt += length;
 }

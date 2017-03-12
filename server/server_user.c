@@ -26,3 +26,34 @@ void handle_local_search_request(server_t* server) {
 
     list_push_back(server->pending_requests, &main_request);
 }
+
+
+void handle_local_download_request(server_t* server) {
+    uint8_t name_length, ip_length, port_length;
+
+    read_from_fd(server->client_socket, &ip_length, sizeof(uint8_t));
+    char* ip = malloc(ip_length + 1);
+    read_from_fd(server->client_socket, ip, name_length);
+
+    read_from_fd(server->client_socket, &port_length, sizeof(uint8_t));
+    char* port = malloc(port_length + 1);
+    read_from_fd(server->client_socket, port, port_length);
+
+    read_from_fd(server->client_socket, &name_length, sizeof(uint8_t));
+    char* filename = malloc(name_length + 1);
+    read_from_fd(server->client_socket, filename, name_length);
+
+    ip[ip_length] = '\0';
+    port[port_length] = '\0';
+    filename[name_length] = '\0';
+
+    request_t request;
+    request.type = REQUEST_DOWNLOAD_LOCAL;
+
+    download_request_t* download_request = malloc(sizeof(download_request_t*));
+    download_request->filename = filename;
+    download_request->ip = ip;
+    download_request->port = port;
+
+    list_push_back(server->pending_requests, &request);
+}

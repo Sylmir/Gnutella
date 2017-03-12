@@ -190,6 +190,21 @@ static void handle_pending_request(server_t* server, request_t* request);
 static void update_log_timers(server_t* server, long int diff);
 
 
+/*
+ * Loop over the sockets that have a download initiated through them and see
+ * if there is something to read on them. If so, handle the answer and close the
+ * socket once it is done.
+ */
+static void handle_pending_downloads(server_t* server);
+
+
+/*
+ * Handle one specific download. The function returns 1 if the download is over
+ * and the socket can safely be closed, otherwise it returns 0.
+ */
+static int handle_pending_download(server_t* server, int sock);
+
+
 /******************************************************************************/
 
 
@@ -235,6 +250,7 @@ int run_server(int first_machine, const char *listen_port,
     server.awaiting_sockets = list_create(compare_ints, add_new_socket);
     server.pending_requests = list_create(NULL, add_new_request);
     server.received_search_requests = list_create(NULL, add_new_search_request_log);
+    server.pending_downloads = list_create(NULL, add_new_socket);
     signal(SIGINT, handle_sigint);
     loop(&server);
     leave_network(&server);
@@ -267,6 +283,7 @@ int loop(server_t* server) {
         }
 
         handle_neighbours(server);
+        handle_pending_downloads(server);
 
         if (handle_client(server) == 1) {
             _loop = 0;
@@ -429,6 +446,9 @@ int handle_awaiting_socket(server_t* server, int socket) {
         }
         break;
 
+    case CMSG_DOWNLOAD:
+        handle_remote_download_request(server, socket);
+        return AWAIT_KEEP;
 
     default:
         break;
@@ -522,6 +542,10 @@ int handle_client(server_t* server) {
         handle_local_search_request(server);
         return 0;
 
+    case CMSG_INT_DOWNLOAD:
+        handle_local_download_request(server);
+        return 0;
+
     default:
         return 0;
     }
@@ -570,6 +594,36 @@ void update_log_timers(server_t* server, long int diff) {
             head = head->next;
         }
     }
+}
+
+
+void handle_pending_downloads(server_t* server) {
+    cell_t* prev = NULL, *head = server->pending_downloads->head;
+    while (head != NULL) {
+        int remove = handle_pending_download(server, *(int*)head->data);
+        if (remove) {
+            list_pop_at(server->pending_downloads, &prev, &head);
+        } else {
+            prev = head;
+            head = head->next;
+        }
+    }
+}
+
+
+static int handle_pending_download(server_t* server, int sock) {
+    struct pollfd poller;
+    int res = poll_fd(&poller, sock, POLLIN, AWAIT_TIMEOUT);
+    if (res == 1) {
+        opcode_t opcode;
+        read_from_fd(sock, &opcode, PKT_ID_SIZE);
+
+        assert(opcode == SMSG_DOWNLOAD);
+        handle_remote_download_answer(server, sock);
+        return 1;
+    }
+
+    return 0;
 }
 
 

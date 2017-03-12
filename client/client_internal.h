@@ -31,7 +31,7 @@ typedef struct file_lookup_s {
 
 
 /*******************************************************************************
- * File lookup
+ * File search
  */
 
 
@@ -90,6 +90,17 @@ LIST_CREATE_FN void* create_machine(void* machine);
  * Create a copy-in-heap of lookup and return it.
  */
 LIST_CREATE_FN void* create_lookup(void* lookup);
+
+
+/*******************************************************************************
+ * File download
+ */
+
+
+/*
+ * Handle the download of a file.
+ */
+void handle_download(client_t* client);
 
 
 #endif /* CLIENT_INTERNAL_H */

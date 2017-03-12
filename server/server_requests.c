@@ -7,12 +7,14 @@
 
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "log.h"
+#include "networking.h"
 #include "packets_defines.h"
 #include "server_internal.h"
 #include "util.h"
@@ -46,7 +48,7 @@ static int check_unique_request(server_t* server, const search_request_t* reques
 
 
 /*
- * Clean a search request.
+ * Clean a search request, i.e free the memory allocated.
  */
 static void clean_search_request(search_request_t* request);
 
@@ -63,6 +65,29 @@ static void forward_to_local(server_t* server, search_request_t* request);
  */
 static void send_search_answer_to_client(server_t* server, const char* filename,
                                          uint8_t nb_ips, char** ips, char** ports);
+
+
+/*
+ * Clean a download request, i.e free the memory allocate.
+ */
+static void clean_download_request(download_request_t* request);
+
+
+/*
+ * Build the header of the download response packet.
+ */
+static void build_download_answer_header(char*** work_ptr,
+                                         download_request_t* request,
+                                         smsg_int_download_answer_codes_t code);
+
+
+/*
+ * Build and send a response to the local client when the only thing we write
+ * in the packet is an error code.
+ */
+static void send_download_error_response(server_t* server, download_request_t* request,
+                                         smsg_int_download_answer_codes_t code);
+
 
 /*
  * Default depth when we are searching for a file on the network. Each time a
@@ -154,71 +179,58 @@ void answer_local_search_request(server_t* server, request_t* request) {
     void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + INET6_ADDRSTRLEN +
                           sizeof(uint8_t) + 5 + sizeof(uint8_t) + 255 + 1 + 1 +
                           1 + INET6_ADDRSTRLEN + 1 + 5);
-    char* data = packet;
+    char** data = (char**)&packet;
 
+    opcode_t opcode;
     if (has_file == 1) {
-        *(opcode_t*)data = SMSG_INT_SEARCH;
+        opcode = SMSG_INT_SEARCH;
     } else {
-        *(opcode_t*)data = CMSG_SEARCH_REQUEST;
+        opcode = CMSG_SEARCH_REQUEST;
     }
-    data += PKT_ID_SIZE;
 
+    write_to_packet(data, &opcode, PKT_ID_SIZE);
 
     if (has_file == 0) {
         const char* local_ip = server->self_ip;
+        uint8_t ip_length = strlen(local_ip);
 
-        *(uint8_t*)data = strlen(local_ip);
-        data += sizeof(uint8_t);
-
-        memcpy(data, local_ip, strlen(local_ip));
-        data += strlen(local_ip);
+        write_to_packet(data, &ip_length, sizeof(uint8_t));
+        write_to_packet(data, local_ip, ip_length);
 
         char* port = extract_port_from_socket_s(server->listening_socket, 0);
-        applog(LOG_LEVEL_INFO, "Contact port: %s, %d\n", port, strlen(port));
-        *(uint8_t*)data = strlen(port);
-        data += sizeof(uint8_t);
+        uint8_t port_length = strlen(port);
 
-        strcpy(data, port);
-        data += strlen(port);
+        write_to_packet(data, &port_length, sizeof(uint8_t));
+        write_to_packet(data, port, port_length);
 
         free(port);
     }
 
-    *(uint8_t*)data = strlen(local_request->name);
-    data += sizeof(uint8_t);
-
-    memcpy(data, local_request->name, strlen(local_request->name));
-    data += strlen(local_request->name);
+    uint8_t filename_length = strlen(local_request->name);
+    write_to_packet(data, &filename_length, sizeof(uint8_t));
+    write_to_packet(data, local_request->name, filename_length);
 
     if (has_file == 0) {
-        *(uint8_t*)data = DEFAULT_TTL;
-        data += sizeof(uint8_t);
+        uint8_t ttl = DEFAULT_TTL;
+        write_to_packet(data, &ttl, sizeof(uint8_t));
     }
 
-    if (has_file == 0) {
-        *(uint8_t*)data = 0;
-    } else {
-        *(uint8_t*)data = 1;
-    }
-    data += sizeof(uint8_t);
+    write_to_packet(data, &has_file, sizeof(uint8_t));
 
     if (has_file == 0) {
-        broadcast_packet(server, packet, (intptr_t)data - (intptr_t)packet);
+        broadcast_packet(server, packet, (intptr_t)*data - (intptr_t)packet);
     } else {
-        *(uint8_t*)data = strlen(server->self_ip);
-        data += sizeof(uint8_t);
-
-        strcpy(data, server->self_ip);
-        data += strlen(server->self_ip);
+        uint8_t self_length = strlen(server->self_ip);
+        write_to_packet(data, &self_length, sizeof(uint8_t));
+        write_to_packet(data, server->self_ip, self_length);
 
         char* port = extract_port_from_socket_s(server->listening_socket, 0);
-        *(uint8_t*)data = strlen(port);
-        data += sizeof(uint8_t);
+        uint8_t port_length = strlen(port);
 
-        strcpy(data, port);
-        data += strlen(port);
+        write_to_packet(data, &port_length, sizeof(uint8_t));
+        write_to_packet(data, port, port_length);
 
-        write_to_fd(server->client_socket, packet, (intptr_t)data - (intptr_t)packet);
+        write_to_fd(server->client_socket, packet, (intptr_t)*data - (intptr_t)packet);
     }
 
     free(packet);
@@ -252,41 +264,34 @@ void answer_remote_search_request(server_t* server, request_t* request) {
                           local_request->nb_ips *
                             (sizeof(uint8_t) + INET6_ADDRSTRLEN +
                              sizeof(uint8_t) + 5));
-    char* ptr = packet;
+    char** ptr = (char**)&packet;
+    opcode_t opcode;
     if (server_answer == 0) {
-        *(opcode_t*)ptr = CMSG_SEARCH_REQUEST;
+        opcode = CMSG_SEARCH_REQUEST;
     } else {
-        *(opcode_t*)ptr = SMSG_SEARCH_REQUEST;
+        opcode = SMSG_SEARCH_REQUEST;
     }
-    ptr += PKT_ID_SIZE;
+
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
 
     if (server_answer == 0) {
         uint8_t length = strlen(local_request->ip_source);
-        *(uint8_t*)ptr = length;
-        ptr += sizeof(uint8_t);
-
-        memcpy(ptr, local_request->ip_source, length);
-        ptr += length;
+        write_to_packet(ptr, &length, sizeof(uint8_t));
+        write_to_packet(ptr, local_request->ip_source, length);
 
         uint8_t port_length = strlen(local_request->port_source);
-        *(uint8_t*)ptr = port_length;
-        ptr += sizeof(uint8_t);
-
-        memcpy(ptr, local_request->port_source, port_length);
-        ptr += port_length;
+        write_to_packet(ptr, &port_length, sizeof(uint8_t));
+        write_to_packet(ptr, local_request->port_source, port_length);
     }
 
     uint8_t filename_length = strlen(local_request->filename);
-    *(uint8_t*)ptr = filename_length;
-    ptr += sizeof(uint8_t);
-
-    memcpy(ptr, local_request->filename, filename_length);
-    ptr += filename_length;
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, local_request->filename, filename_length);
 
     if (server_answer == 0) {
         assert(local_request->ttl > 0);
-        *(uint8_t*)ptr = local_request->ttl - 1;
-        ptr += sizeof(uint8_t);
+        uint8_t ttl = local_request->ttl - 1;
+        write_to_packet(ptr, &ttl, sizeof(uint8_t));
     }
 
     int has_file = 0;
@@ -296,24 +301,18 @@ void answer_remote_search_request(server_t* server, request_t* request) {
         }
     }
 
-    *(uint8_t*)ptr = local_request->nb_ips + (has_file == 1 ? 1 : 0);
-    ptr += sizeof(uint8_t);
+    uint8_t nb_ips = local_request->nb_ips + (has_file == 1 ? 1 : 0);
+    write_to_packet(ptr, &nb_ips, sizeof(uint8_t));
 
     for (int i = 0; i < local_request->nb_ips; i++) {
         uint8_t ip_length = strlen(local_request->ips[i]);
         uint8_t port_length = strlen(local_request->ports[i]);
 
-        *(uint8_t*)ptr = ip_length;
-        ptr += sizeof(uint8_t);
+        write_to_packet(ptr, &ip_length, sizeof(uint8_t));
+        write_to_packet(ptr, local_request->ips[i], ip_length);
 
-        strcpy(ptr, local_request->ips[i]);
-        ptr += ip_length;
-
-        *(uint8_t*)ptr = port_length;
-        ptr += sizeof(uint8_t);
-
-        strcpy(ptr, local_request->ports[i]);
-        ptr += port_length;
+        write_to_packet(ptr, &port_length, sizeof(uint8_t));
+        write_to_packet(ptr, local_request->ports[i], port_length);
     }
 
     if (has_file == 1) {
@@ -321,17 +320,11 @@ void answer_remote_search_request(server_t* server, request_t* request) {
         const char* local_port = extract_port_from_socket_s(server->listening_socket, 0);
         uint8_t port_length = strlen(local_port);
 
-        *(uint8_t*)ptr = ip_length;
-        ptr += sizeof(uint8_t);
+        write_to_packet(ptr, &ip_length, sizeof(uint8_t));
+        write_to_packet(ptr, server->self_ip, ip_length);
 
-        strcpy(ptr, server->self_ip);
-        ptr += ip_length;
-
-        *(uint8_t*)ptr = port_length;
-        ptr += sizeof(uint8_t);
-
-        strcpy(ptr, local_port);
-        ptr += port_length;
+        write_to_packet(ptr, &port_length, sizeof(uint8_t));
+        write_to_packet(ptr, local_port, port_length);
     }
 
     int* sockets = malloc(sizeof(int) * MAX_NEIGHBOURS);
@@ -344,8 +337,7 @@ void answer_remote_search_request(server_t* server, request_t* request) {
         }
     }
 
-    broadcast_packet_to(sockets, nb_sockets, packet, (intptr_t)ptr - (intptr_t)packet);
-
+    broadcast_packet_to(sockets, nb_sockets, packet, (intptr_t)*ptr - (intptr_t)packet);
 
     free(packet);
     clean_search_request(local_request);
@@ -353,12 +345,132 @@ void answer_remote_search_request(server_t* server, request_t* request) {
 
 
 void answer_local_download_request(server_t* server, request_t* request) {
+    download_request_t* download = (download_request_t*)request->request;
 
+    if (search_file(download->filename) == 1) {
+        send_download_error_response(server, download, ANSWER_CODE_LOCAL);
+        return;
+    }
+
+    int sock = -1;
+    int res = connect_to(download->ip, download->port, &sock);
+
+    if (res != CONNECT_OK) {
+        send_download_error_response(server, download, ANSWER_CODE_REMOTE_OFFLINE);
+        return;
+    }
+
+    list_push_back(server->pending_downloads, &sock);
+
+    void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(download->filename));
+    char** ptr = (char**)&packet;
+
+    opcode_t opcode = CMSG_DOWNLOAD;
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
+
+    uint8_t filename_length = strlen(download->filename);
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, download->filename, filename_length);
+
+    write_to_fd(sock, packet, (intptr_t)*ptr - (intptr_t)packet);
+
+    clean_download_request(download);
+    free(packet);
 }
 
 
 void answer_remote_download_request(server_t* server, request_t* request) {
+    UNUSED(server);
 
+    remote_download_request_t* download = (remote_download_request_t*)request->request;
+
+    int has_file = search_file(download->filename);
+    if (has_file == 0) {
+        void* packet = malloc(PKT_ID_SIZE +
+                              sizeof(uint8_t) + INET6_ADDRSTRLEN +
+                              sizeof(uint8_t) + 5 +
+                              sizeof(uint8_t) + strlen(download->filename) +
+                              sizeof(uint8_t));
+        char** ptr = (char**)&packet;
+        char* ip, *port;
+        extract_ip_port_from_socket_s(download->socket, &ip, &port, 0);
+
+        opcode_t opcode = SMSG_DOWNLOAD;
+        uint8_t ip_length = strlen(ip), port_length = strlen(port);
+        uint8_t name_length = strlen(download->filename);
+        uint8_t result = ANSWER_CODE_REMOTE_NOT_FOUND;
+
+        write_to_packet(ptr, &opcode, PKT_ID_SIZE);
+        write_to_packet(ptr, &ip_length, sizeof(uint8_t));
+        write_to_packet(ptr, ip, strlen(ip));
+        write_to_packet(ptr, &port_length, sizeof(uint8_t));
+        write_to_packet(ptr, port, strlen(port));
+        write_to_packet(ptr, &name_length, sizeof(uint8_t));
+        write_to_packet(ptr, download->filename, strlen(download->filename));
+        write_to_packet(ptr, &result, sizeof(uint8_t));
+
+        write_to_fd(download->socket, packet, (intptr_t)*ptr - (intptr_t)packet);
+
+        free(ip);
+        free(port);
+        free(packet);
+        /* JE HAIS CETTE LIGNE, POURQUOI JE DOIS EXTRAIRE L'IP ET LE PORT ENCORE UNE FOIS ? */
+        close(download->socket);
+        free(download->filename);
+        free(download);
+
+        return;
+    }
+
+    char* full_name = malloc(strlen(SEARCH_DIRECTORY) + 1 + strlen(download->filename) + 1);
+    sprintf(full_name, "%s/%s", SEARCH_DIRECTORY, download->filename);
+    int file = open(full_name, O_RDONLY, 0666);
+    free(full_name);
+
+    uint32_t length = 0;
+    void* buffer = malloc(100);
+    int _read = 0;
+
+    do {
+        _read = read(file, buffer + length, 100);
+
+        if (_read == 0) {
+            break;
+        }
+
+        void* copy = malloc(length);
+        memcpy(copy, buffer, length);
+
+        length += _read;
+
+        buffer = realloc(buffer, length);
+        memcpy(buffer, copy, length);
+
+        free(copy);
+    } while (1);
+
+    void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + sizeof(uint32_t) + length);
+    char** ptr = (char**)&packet;
+
+    opcode_t opcode = SMSG_DOWNLOAD;
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
+
+    uint8_t answer = ANSWER_CODE_REMOTE_FOUND;
+    write_to_packet(ptr, &answer, sizeof(uint8_t));
+
+    uint8_t filename_length = strlen(download->filename);
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, download->filename, filename_length);
+
+    write_to_packet(ptr, &length, sizeof(uint32_t));
+    write_to_packet(ptr, buffer, length);
+
+    write_to_fd(download->socket, packet, (intptr_t)*ptr - (intptr_t)packet);
+
+    free(packet);
+    close(download->socket);
+    free(download->filename);
+    free(download);
 }
 
 
@@ -492,35 +604,28 @@ void send_search_answer_to_client(server_t* server, const char* filename,
                           nb_ips *
                             (sizeof(uint8_t) + INET6_ADDRSTRLEN +
                              sizeof(uint8_t) + 5));
-    char* ptr = packet;
+    char** ptr = (char**)&packet;
 
-    *(opcode_t*)ptr = SMSG_INT_SEARCH;
-    ptr += PKT_ID_SIZE;
+    opcode_t opcode = SMSG_INT_SEARCH;
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
 
-    *(uint8_t*)ptr = strlen(filename);
-    ptr += sizeof(uint8_t);
+    uint8_t filename_length = strlen(filename);
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, filename, filename_length);
 
-    strcpy(ptr, filename);
-    ptr += strlen(filename);
-
-    *(uint8_t*)ptr = nb_ips;
-    ptr += sizeof(uint8_t);
+    write_to_packet(ptr, &nb_ips, sizeof(uint8_t));
 
     for (int i = 0; i < nb_ips; i++) {
-        *(uint8_t*)ptr = strlen(ips[i]);
-        ptr += sizeof(uint8_t);
+        uint8_t ip_length = strlen(ips[i]), port_length = strlen(ports[i]);
 
-        strcpy(ptr, ips[i]);
-        ptr += strlen(ips[i]);
+        write_to_packet(ptr, &ip_length, sizeof(uint8_t));
+        write_to_packet(ptr, ips[i], ip_length);
 
-        *(uint8_t*)ptr = strlen(ports[i]);
-        ptr += sizeof(uint8_t);
-
-        strcpy(ptr, ports[i]);
-        ptr += strlen(ports[i]);
+        write_to_packet(ptr, &port_length, sizeof(uint8_t));
+        write_to_packet(ptr, ports[i], port_length);
     }
 
-    write_to_fd(target, packet, (intptr_t)ptr - (intptr_t)packet);
+    write_to_fd(target, packet, (intptr_t)*ptr - (intptr_t)packet);
 
     free(packet);
     for (int i = 0; i < nb_ips; i++) {
@@ -530,4 +635,146 @@ void send_search_answer_to_client(server_t* server, const char* filename,
 
     free(ips);
     free(ports);
+}
+
+
+void clean_download_request(download_request_t* request) {
+    free(request->filename);
+    free(request->ip);
+    free(request->port);
+    free(request);
+}
+
+
+void send_download_error_response(server_t* server, download_request_t* request,
+                                         smsg_int_download_answer_codes_t code) {
+    void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(request->filename) +
+                          sizeof(uint8_t) + strlen(request->ip) +
+                          sizeof(uint8_t) + strlen(request->port) +
+                          sizeof(uint8_t));
+    char** ptr = (char**)&packet;
+    build_download_answer_header(&ptr, request, code);
+
+    write_to_fd(server->client_socket, packet, (intptr_t)*ptr - (intptr_t)packet);
+
+    free(packet);
+    clean_download_request(request);
+}
+
+
+void build_download_answer_header(char*** work_ptr,
+                                  download_request_t* request,
+                                  smsg_int_download_answer_codes_t code) {
+    char** ptr = *work_ptr;
+
+    opcode_t opcode = SMSG_INT_DOWNLOAD;
+    uint8_t ip_length = strlen(request->ip);
+    uint8_t port_length = strlen(request->port);
+    uint8_t filename_length = strlen(request->filename);
+
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
+
+    write_to_packet(ptr, &ip_length, sizeof(uint8_t));
+    write_to_packet(ptr, request->ip, ip_length);
+
+    write_to_packet(ptr, &port_length, sizeof(uint8_t));
+    write_to_packet(ptr, request->port, port_length);
+
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, request->filename, filename_length);
+
+    write_to_packet(ptr, &code, sizeof(uint8_t));
+
+    *work_ptr = ptr;
+}
+
+
+void handle_remote_download_answer(server_t* server, int sock) {
+    uint8_t answer;
+    read_from_fd(sock, &answer, sizeof(uint8_t));
+
+    if (answer == ANSWER_CODE_REMOTE_NOT_FOUND) {
+        download_request_t* request = malloc(sizeof(download_request_t));
+        uint8_t ip_length, port_length, filename_length;
+
+        read_from_fd(sock, &ip_length, sizeof(uint8_t));
+
+        request->ip = malloc(ip_length + 1);
+        read_from_fd(sock, request->ip, ip_length);
+        request->ip[ip_length] = '\0';
+
+        read_from_fd(sock, &port_length, sizeof(uint8_t));
+
+        request->port = malloc(port_length + 1);
+        read_from_fd(sock, request->port, port_length);
+        request->port[port_length] = '\0';
+
+        read_from_fd(sock, &filename_length, sizeof(uint8_t));
+
+        request->filename = malloc(filename_length + 1);
+        read_from_fd(sock, request->filename, filename_length);
+        request->filename[filename_length] = '\0';
+
+        send_download_error_response(server, request, ANSWER_CODE_REMOTE_NOT_FOUND);
+
+        return;
+    }
+
+    uint8_t filename_length;
+    read_from_fd(sock, &filename_length, sizeof(uint8_t));
+
+    char* filename = malloc(filename_length + 1);
+    read_from_fd(sock, filename, filename_length);
+    filename[filename_length] = '\0';
+
+    uint8_t file_length;
+    read_from_fd(sock, &file_length, sizeof(uint8_t));
+
+    void* buffer = malloc(file_length);
+    read_from_fd(sock, buffer, file_length);
+
+    char* pathname = malloc(strlen(SEARCH_DIRECTORY + 1 + filename_length + 1));
+    sprintf(pathname, "%s/%s", SEARCH_DIRECTORY, filename);
+
+    int new_file = open(pathname, O_WRONLY, 0666);
+    write_to_fd(new_file, buffer, file_length);
+
+    free(buffer);
+    free(pathname);
+
+    void* packet = malloc(PKT_ID_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + strlen(filename));
+    char** ptr = (char**)&packet;
+
+    opcode_t opcode = SMSG_INT_DOWNLOAD;
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
+
+    smsg_int_download_answer_codes_t code = ANSWER_CODE_REMOTE_FOUND;
+    write_to_packet(ptr, &code, sizeof(uint8_t));
+    write_to_packet(ptr, &filename_length, sizeof(uint8_t));
+    write_to_packet(ptr, filename, filename_length);
+
+    write_to_fd(server->client_socket, packet, (intptr_t)*ptr - (intptr_t)packet);
+
+    free(filename);
+    free(packet);
+}
+
+
+void handle_remote_download_request(server_t* server, int sock) {
+    uint8_t name_length;
+    read_from_fd(sock, &name_length, sizeof(uint8_t));
+
+    char* filename = malloc(name_length + 1);
+    read_from_fd(sock, filename, name_length);
+    filename[name_length] = '\0';
+
+    remote_download_request_t* request = malloc(sizeof(remote_download_request_t));
+    request->socket = sock;
+    request->filename = filename;
+
+    request_t main_request;
+    main_request.type = REQUEST_DOWNLOAD_REMOTE;
+    main_request.request = request;
+
+    list_push_back(server->pending_requests, &main_request);
 }

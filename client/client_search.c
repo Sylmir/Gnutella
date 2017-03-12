@@ -18,17 +18,16 @@ void handle_search(client_t* client) {
     }
 
     void* data = malloc(PKT_ID_SIZE + sizeof(uint8_t) + strlen(name));
-    char* ptr = data;
-    *(opcode_t*)ptr = CMSG_INT_SEARCH;
-    ptr += PKT_ID_SIZE;
+    char** ptr = (char**)&data;
 
-    *(uint8_t*)ptr = strlen(name);
-    ptr += sizeof(uint8_t);
+    opcode_t opcode = CMSG_INT_SEARCH;
+    write_to_packet(ptr, &opcode, PKT_ID_SIZE);
 
-    memcpy(ptr, name, strlen(name));
-    ptr += strlen(name);
+    uint8_t name_length = strlen(name);
+    write_to_packet(ptr, &name_length, sizeof(uint8_t));
+    write_to_packet(ptr, name, name_length);
 
-    write_to_fd(client->server_socket, data, (intptr_t)ptr - (intptr_t)data);
+    write_to_fd(client->server_socket, data, (intptr_t)*ptr - (intptr_t)data);
 
     free(data);
 }

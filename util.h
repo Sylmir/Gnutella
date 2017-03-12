@@ -187,4 +187,11 @@ int elapsed_time_since(const struct timespec* begin);
 void millisleep(int milliseconds);
 
 
+/*
+ * Write length bytes of data into *ptr and move *ptr length bytes farther.
+ * My god, I can't believe I just came up now with that (12/03, 18:33).
+ */
+void write_to_packet(char** pkt, const void* data, int length);
+
+
 #endif /* UTIL_H */

@@ -85,12 +85,6 @@ static void handle_servent(client_t* client);
 static void handle_command(client_t* client, char* command);
 
 
-/*
- * Handle the download of a file.
- */
-static void handle_download(client_t* client);
-
-
 #define SEARCH_COMMAND "search"
 #define DOWNLOAD_COMMAND "download"
 #define LOOKUP_COMMAND "lookup"
@@ -100,8 +94,7 @@ static const char* commands[][2] = {
     { HELP_COMMAND, "Affiche l'aide." },
     { SEARCH_COMMAND " nom_de_fichier", "Demande la recherche du fichier <nom_de_fichier>." },
     { LOOKUP_COMMAND " nom_de_fichier", "Demander la liste des machines qui possèdent le fichier <nom_de_fichier>." },
-    { DOWNLOAD_COMMAND " nom_de_fichier [ip port]", "Effectue le téléchargement du fichier <nom_de_fichier> depuis la machine d'IP <ip> sur le port <port>.\n"
-                                           "\tSi IP ou port n'est pas spécifié, une recherche est effectuée, puis une machine est sélectionnée au hasard parmis les candidates." },
+    { DOWNLOAD_COMMAND " ip port nom_de_fichier", "Effectue le téléchargement du fichier <nom_de_fichier> depuis la machine d'IP <ip> sur le port <port>.\n" },
     { EXIT_COMMAND, "Quitte l'application." },
     { NULL, NULL }
 };
@@ -179,6 +172,26 @@ int loop(client_t* client) {
 void clear_client(client_t* client) {
     write_exit_packet(client);
 
+    cell_t* files_head = client->machines_by_files->head;
+    while (files_head != NULL) {
+        file_lookup_t* lookup = (file_lookup_t*)files_head->data;
+
+        cell_t* machines_head = lookup->machines->head;
+        while (machines_head != NULL) {
+            machine_t* machine = (machine_t*)machines_head->data;
+            const_free(machine->ip);
+            const_free(machine->port);
+
+            machines_head = machines_head->next;
+        }
+
+        const_free(lookup->filename);
+        list_destroy(&lookup->machines);
+        files_head = files_head->next;
+    }
+
+    list_destroy(&client->machines_by_files);
+
     close(client->server_socket);
     client->server_socket = -1;
 
@@ -248,9 +261,4 @@ void handle_command(client_t* client, char* command) {
     } else if (strcmp(command_name, LOOKUP_COMMAND) == 0) {
         handle_lookup(client);
     }
-}
-
-
-static void handle_download(client_t* client) {
-
 }
